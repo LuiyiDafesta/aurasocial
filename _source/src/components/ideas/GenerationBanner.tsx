@@ -6,6 +6,7 @@ interface GenerationBannerProps {
   isGenerating: boolean;
   status: GenerationStatus | null;
   brandName?: string;
+  topic?: string | null;
   ideasCreated?: number;
   errorMessage?: string | null;
   onDismiss?: () => void;
@@ -16,6 +17,7 @@ export function GenerationBanner({
   isGenerating,
   status,
   brandName,
+  topic,
   ideasCreated = 5,
   errorMessage,
   onDismiss,
@@ -37,7 +39,11 @@ export function GenerationBanner({
             <div>
               <h4 className="text-sm font-bold text-white tracking-tight flex items-center gap-1.5">
                 <Sparkles className="w-4 h-4 text-aura-400" />
-                {status === 'running' ? 'Generando 5 nuevas ideas con IA...' : 'Iniciando agente de estrategia (WF01)...'}
+                {status === 'running'
+                  ? topic 
+                    ? `Generando ideas sobre: "${topic}"...`
+                    : 'Generando nuevas ideas estratégicas con IA...'
+                  : 'Iniciando agente de estrategia (WF01)...'}
               </h4>
               <p className="text-xs text-slate-300 mt-0.5">
                 Diseñando conceptos y ganchos estratégicos para <strong className="text-white">{brandName || 'la marca activa'}</strong>. Esto suele tardar entre 15 y 20 segundos.

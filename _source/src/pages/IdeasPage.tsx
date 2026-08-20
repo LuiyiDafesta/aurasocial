@@ -3,7 +3,9 @@ import { useIdeas } from '../hooks/useIdeas';
 import { useIdeaGeneration } from '../hooks/useIdeaGeneration';
 import { IdeaCard } from '../components/ideas/IdeaCard';
 import { GenerationBanner } from '../components/ideas/GenerationBanner';
+import { GenerateIdeasModal } from '../components/ideas/GenerateIdeasModal';
 import { IdeaPriority, ContentIdea } from '../types/contentIdea';
+import { GenerationContext } from '../types/generationRun';
 import { Button } from '../components/common/Button';
 import { Input } from '../components/common/Input';
 import { useToast } from '../hooks/useToast';
@@ -26,6 +28,7 @@ interface IdeasPageProps {
 export function IdeasPage({ workspaceId, brandId, brandName }: IdeasPageProps) {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [priorityFilter, setPriorityFilter] = useState<IdeaPriority | 'all'>('all');
+  const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const { toast } = useToast();
 
   const { ideas, isLoading, error, refreshIdeas } = useIdeas({
@@ -39,6 +42,7 @@ export function IdeasPage({ workspaceId, brandId, brandName }: IdeasPageProps) {
     isGenerating,
     runStatus,
     ideasCreated,
+    currentContext,
     error: generationError,
     startGeneration,
     clearStatus,
@@ -56,6 +60,15 @@ export function IdeasPage({ workspaceId, brandId, brandName }: IdeasPageProps) {
       type: 'info',
       description: 'La integración con el workflow de producción WF02 se habilitará en la siguiente fase.',
     });
+  };
+
+  const handleOpenModal = () => {
+    if (isGenerating || !workspaceId || !brandId) return;
+    setIsModalOpen(true);
+  };
+
+  const handleConfirmGeneration = (context: GenerationContext) => {
+    startGeneration(context);
   };
 
   const priorityOptions = [
@@ -98,7 +111,7 @@ export function IdeasPage({ workspaceId, brandId, brandName }: IdeasPageProps) {
           <Button
             variant="primary"
             size="sm"
-            onClick={startGeneration}
+            onClick={handleOpenModal}
             disabled={isGenerating || !workspaceId || !brandId}
             isLoading={isGenerating}
             leftIcon={<Sparkles className="w-4 h-4" />}
@@ -114,10 +127,11 @@ export function IdeasPage({ workspaceId, brandId, brandName }: IdeasPageProps) {
         isGenerating={isGenerating}
         status={runStatus}
         brandName={brandName}
+        topic={currentContext?.topic}
         ideasCreated={ideasCreated}
         errorMessage={generationError}
         onDismiss={clearStatus}
-        onRetry={startGeneration}
+        onRetry={handleOpenModal}
       />
 
       {/* Search & Filter Bar */}
@@ -194,14 +208,14 @@ export function IdeasPage({ workspaceId, brandId, brandName }: IdeasPageProps) {
             <p className="text-xs text-slate-400 max-w-sm mx-auto">
               {searchQuery || priorityFilter !== 'all'
                 ? 'No se encontraron ideas con los filtros aplicados.'
-                : 'Todavía no hay ideas generadas para esta marca. Presioná "Generar Nuevas Ideas" para que la IA diseñe 5 conceptos estratégicos.'}
+                : 'Todavía no hay ideas generadas para esta marca. Presioná "Generar Nuevas Ideas" para que la IA diseñe conceptos a medida.'}
             </p>
           </div>
           {(!searchQuery && priorityFilter === 'all') && (
             <Button
               variant="primary"
               size="sm"
-              onClick={startGeneration}
+              onClick={handleOpenModal}
               disabled={isGenerating}
               isLoading={isGenerating}
               leftIcon={<Sparkles className="w-4 h-4" />}
@@ -211,6 +225,15 @@ export function IdeasPage({ workspaceId, brandId, brandName }: IdeasPageProps) {
           )}
         </div>
       )}
+
+      {/* Config Modal */}
+      <GenerateIdeasModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onGenerate={handleConfirmGeneration}
+        brandName={brandName || 'TravelRockChannel'}
+        isGenerating={isGenerating}
+      />
     </div>
   );
 }

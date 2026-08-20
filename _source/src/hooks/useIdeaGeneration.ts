@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { GenerationStatus, GenerationRun } from '../types/generationRun';
+import { GenerationStatus, GenerationRun, GenerationContext } from '../types/generationRun';
 import { 
   triggerIdeaGeneration, 
   getGenerationRunStatus, 
@@ -21,6 +21,7 @@ export function useIdeaGeneration({
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [runStatus, setRunStatus] = useState<GenerationStatus | null>(null);
   const [ideasCreated, setIdeasCreated] = useState<number>(0);
+  const [currentContext, setCurrentContext] = useState<GenerationContext | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -45,6 +46,7 @@ export function useIdeaGeneration({
         if (existing && isMounted) {
           setActiveRunId(existing.id);
           setRunStatus(existing.status);
+          setCurrentContext(existing.generation_context || null);
           setIsGenerating(true);
         }
       } catch (err) {
@@ -73,6 +75,10 @@ export function useIdeaGeneration({
       try {
         const run: GenerationRun = await getGenerationRunStatus(activeRunId);
         setRunStatus(run.status);
+
+        if (run.generation_context && !currentContext) {
+          setCurrentContext(run.generation_context);
+        }
 
         if (run.status === 'completed') {
           setIsGenerating(false);
@@ -113,10 +119,10 @@ export function useIdeaGeneration({
     return () => {
       stopPolling();
     };
-  }, [activeRunId, isGenerating, onGenerationCompleted, stopPolling]);
+  }, [activeRunId, isGenerating, onGenerationCompleted, stopPolling, currentContext]);
 
-  // Disparar generación
-  const startGeneration = async () => {
+  // Disparar generación con contexto opcional
+  const startGeneration = async (context?: GenerationContext) => {
     if (!workspaceId || !brandId || isGenerating) return;
 
     try {
@@ -124,9 +130,10 @@ export function useIdeaGeneration({
       setError(null);
       setRunStatus('pending');
       setIdeasCreated(0);
+      setCurrentContext(context || null);
       pollCountRef.current = 0;
 
-      const response = await triggerIdeaGeneration(workspaceId, brandId);
+      const response = await triggerIdeaGeneration(workspaceId, brandId, context);
       setActiveRunId(response.run_id);
     } catch (err: any) {
       console.error('Error al iniciar generación de ideas:', err);
@@ -139,6 +146,7 @@ export function useIdeaGeneration({
   const clearStatus = () => {
     setError(null);
     setRunStatus(null);
+    setCurrentContext(null);
   };
 
   return {
@@ -146,6 +154,7 @@ export function useIdeaGeneration({
     runStatus,
     activeRunId,
     ideasCreated,
+    currentContext,
     error,
     startGeneration,
     clearStatus,

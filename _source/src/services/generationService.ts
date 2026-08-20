@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase';
-import { GenerationRun } from '../types/generationRun';
+import { GenerationRun, GenerationContext } from '../types/generationRun';
 
 interface TriggerGenerationResponse {
   run_id: string;
@@ -12,12 +12,21 @@ interface TriggerGenerationResponse {
  */
 export async function triggerIdeaGeneration(
   workspaceId: string,
-  brandId: string
+  brandId: string,
+  context?: GenerationContext
 ): Promise<TriggerGenerationResponse> {
   const { data, error } = await supabase.functions.invoke('generate-ideas', {
     body: {
       workspace_id: workspaceId,
       brand_id: brandId,
+      generation_context: context || {
+        topic: null,
+        keywords: [],
+        objective: null,
+        preferred_format: 'any',
+        web_research: true,
+        ideas_count: 5,
+      },
     },
   });
 

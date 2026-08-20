@@ -43,9 +43,9 @@ serve(async (req) => {
       );
     }
 
-    // 2. Extraer parámetros del body
+    // 2. Extraer y validar parámetros del body
     const body = await req.json();
-    const { workspace_id, brand_id } = body;
+    const { workspace_id, brand_id, generation_context: rawContext } = body;
 
     if (!workspace_id || !brand_id) {
       return new Response(
@@ -54,9 +54,57 @@ serve(async (req) => {
       );
     }
 
+    // 3. Sanitización y validación estricta de generation_context
+    const ctx = rawContext || {};
+
+    let topic: string | null = null;
+    if (typeof ctx.topic === "string" && ctx.topic.trim()) {
+      topic = ctx.topic.trim().slice(0, 250);
+    }
+
+    let keywords: string[] = [];
+    if (Array.isArray(ctx.keywords)) {
+      const uniqueKws = new Set<string>();
+      for (const kw of ctx.keywords) {
+        if (typeof kw === "string" && kw.trim()) {
+          uniqueKws.add(kw.trim().slice(0, 50));
+          if (uniqueKws.size >= 10) break;
+        }
+      }
+      keywords = Array.from(uniqueKws);
+    }
+
+    let objective: string | null = null;
+    if (typeof ctx.objective === "string" && ctx.objective.trim()) {
+      objective = ctx.objective.trim().slice(0, 350);
+    }
+
+    const allowedFormats = ["any", "video", "reel", "tiktok", "carousel", "post"];
+    const preferred_format = allowedFormats.includes(ctx.preferred_format)
+      ? ctx.preferred_format
+      : "any";
+
+    const web_research = typeof ctx.web_research === "boolean"
+      ? ctx.web_research
+      : true;
+
+    let ideas_count = 5;
+    if (typeof ctx.ideas_count === "number" && ctx.ideas_count >= 1 && ctx.ideas_count <= 10) {
+      ideas_count = Math.floor(ctx.ideas_count);
+    }
+
+    const sanitizedContext = {
+      topic,
+      keywords,
+      objective,
+      preferred_format,
+      web_research,
+      ideas_count,
+    };
+
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
-    // 3. Validar que el usuario sea miembro del workspace
+    // 4. Validar que el usuario sea miembro del workspace
     const { data: membership, error: memErr } = await supabaseAdmin
       .from("workspace_members")
       .select("id, role")
@@ -71,7 +119,7 @@ serve(async (req) => {
       );
     }
 
-    // 4. Validar que la brand pertenezca al workspace
+    // 5. Validar que la brand pertenezca al workspace
     const { data: brand, error: brandErr } = await supabaseAdmin
       .from("brands")
       .select("id, name")
@@ -86,7 +134,7 @@ serve(async (req) => {
       );
     }
 
-    // 5. Prevenir ejecuciones duplicadas concurrentes (últimos 2 minutos)
+    // 6. Prevenir ejecuciones duplicadas concurrentes (últimos 2 minutos)
     const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
     const { data: activeRuns } = await supabaseAdmin
       .from("generation_runs")
@@ -109,7 +157,7 @@ serve(async (req) => {
       );
     }
 
-    // 6. Crear el registro generation_run en estado 'pending' (started_at = null)
+    // 7. Crear el registro generation_run en estado 'pending' con generation_context
     const { data: newRun, error: createRunErr } = await supabaseAdmin
       .from("generation_runs")
       .insert({
@@ -119,8 +167,9 @@ serve(async (req) => {
         workflow_name: "WF01",
         status: "pending",
         started_at: null,
+        generation_context: sanitizedContext,
       })
-      .select("id, status, created_at")
+      .select("id, status, created_at, generation_context")
       .single();
 
     if (createRunErr || !newRun) {
@@ -131,13 +180,14 @@ serve(async (req) => {
       );
     }
 
-    // 7. Enviar POST al Webhook de n8n
+    // 8. Enviar POST al Webhook de n8n incluyendo el context
     try {
       const n8nPayload = {
         run_id: newRun.id,
         workspace_id,
         brand_id,
         user_id: user.id,
+        generation_context: sanitizedContext,
       };
 
       const n8nResponse = await fetch(n8nWebhookUrl, {
@@ -186,7 +236,7 @@ serve(async (req) => {
       );
     }
 
-    // 8. Responder inmediatamente al frontend con el run_id
+    // 9. Responder inmediatamente al frontend con el run_id
     return new Response(
       JSON.stringify({
         run_id: newRun.id,
