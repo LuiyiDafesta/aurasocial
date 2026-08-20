@@ -2,12 +2,23 @@ import { supabase } from '../lib/supabase';
 import { StatusCounts } from '../types/database';
 
 /**
- * Obtiene los contadores de contenidos por estado en una sola consulta eficiente.
+ * Obtiene los contadores de contenidos por estado filtrados por workspace y brand.
  */
-export async function getAggregatedStatusCounts(): Promise<StatusCounts> {
-  const { data, error } = await supabase
-    .from('content_items')
-    .select('status');
+export async function getAggregatedStatusCounts(
+  workspaceId?: string,
+  brandId?: string
+): Promise<StatusCounts> {
+  let query = supabase.from('content_items').select('status');
+
+  if (workspaceId) {
+    query = query.eq('workspace_id', workspaceId);
+  }
+
+  if (brandId) {
+    query = query.eq('brand_id', brandId);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     console.error('Error al obtener contadores de estado:', error);
@@ -22,7 +33,7 @@ export async function getAggregatedStatusCounts(): Promise<StatusCounts> {
   }
 
   const counts: StatusCounts = {
-    all: data.length,
+    all: data?.length || 0,
     draft: 0,
     approved: 0,
     scheduled: 0,
@@ -30,7 +41,7 @@ export async function getAggregatedStatusCounts(): Promise<StatusCounts> {
     rejected: 0,
   };
 
-  data.forEach((item: { status: string }) => {
+  data?.forEach((item: { status: string }) => {
     const s = item.status as keyof Omit<StatusCounts, 'all'>;
     if (counts[s] !== undefined) {
       counts[s]++;

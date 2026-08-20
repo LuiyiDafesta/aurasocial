@@ -1,5 +1,8 @@
 import { useState } from 'react';
 import { useAuth } from './hooks/useAuth';
+import { useWorkspace } from './hooks/useWorkspace';
+import { useSocialAccounts } from './hooks/useSocialAccounts';
+import { useContentStats } from './hooks/useContentStats';
 import { AuthPage } from './pages/AuthPage';
 import { MainLayout } from './layouts/MainLayout';
 import { NavigationTab } from './layouts/Sidebar';
@@ -8,14 +11,33 @@ import { ContenidosPage } from './pages/ContenidosPage';
 import { LayoutDashboard, Lightbulb, Calendar, BarChart3, Loader2 } from 'lucide-react';
 
 export default function App() {
-  const { user, isLoading, signOut, isAuthenticated } = useAuth();
+  const { user, isLoading: isAuthLoading, signOut, isAuthenticated } = useAuth();
   const [currentTab, setCurrentTab] = useState<NavigationTab>('contenidos');
 
-  if (isLoading) {
+  // Hooks de datos reales desde Supabase
+  const { 
+    currentWorkspace, 
+    currentBrand, 
+    isLoading: isWorkspaceLoading 
+  } = useWorkspace(isAuthenticated);
+
+  const { 
+    accounts: socialAccounts, 
+    isLoading: isAccountsLoading 
+  } = useSocialAccounts(currentWorkspace?.id, currentBrand?.id);
+
+  const { 
+    stats, 
+    isLoading: isStatsLoading 
+  } = useContentStats(currentWorkspace?.id, currentBrand?.id);
+
+  if (isAuthLoading || (isAuthenticated && isWorkspaceLoading)) {
     return (
       <div className="min-h-screen bg-dark-950 flex flex-col items-center justify-center text-slate-300">
         <Loader2 className="w-8 h-8 text-aura-500 animate-spin mb-3" />
-        <span className="text-xs font-medium tracking-wide text-slate-400">Iniciando Aura Social...</span>
+        <span className="text-xs font-medium tracking-wide text-slate-400">
+          Cargando entorno de Aura Social...
+        </span>
       </div>
     );
   }
@@ -61,7 +83,12 @@ export default function App() {
         );
       case 'contenidos':
       default:
-        return <ContenidosPage />;
+        return (
+          <ContenidosPage
+            workspaceId={currentWorkspace?.id}
+            brandId={currentBrand?.id}
+          />
+        );
     }
   };
 
@@ -72,6 +99,12 @@ export default function App() {
       user={user}
       onSignOut={signOut}
       title={currentTab.charAt(0).toUpperCase() + currentTab.slice(1)}
+      workspaceName={currentWorkspace?.name}
+      brandName={currentBrand?.name}
+      socialAccounts={socialAccounts}
+      stats={stats}
+      isStatsLoading={isStatsLoading}
+      isAccountsLoading={isAccountsLoading}
     >
       {renderContent()}
     </MainLayout>

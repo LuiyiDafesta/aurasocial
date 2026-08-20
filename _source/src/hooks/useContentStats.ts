@@ -11,21 +11,27 @@ const initialCounts: StatusCounts = {
   rejected: 0,
 };
 
-export function useContentStats() {
+export function useContentStats(workspaceId?: string | null, brandId?: string | null) {
   const [stats, setStats] = useState<StatusCounts>(initialCounts);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   const fetchStats = useCallback(async () => {
+    if (!workspaceId) {
+      setStats(initialCounts);
+      setIsLoading(false);
+      return;
+    }
+
     try {
       setIsLoading(true);
-      const data = await getAggregatedStatusCounts();
+      const data = await getAggregatedStatusCounts(workspaceId, brandId || undefined);
       setStats(data);
     } catch (err) {
       console.error('Error al cargar estadísticas de contenido:', err);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [workspaceId, brandId]);
 
   useEffect(() => {
     fetchStats();

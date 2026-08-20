@@ -2,16 +2,33 @@ import { useState, useEffect, useCallback } from 'react';
 import { ContentItem, ContentFilterOptions } from '../types/contentItem';
 import { getContentItems } from '../services/contentItemsService';
 
-export function useContentItems(filters?: ContentFilterOptions) {
+interface UseContentItemsOptions extends ContentFilterOptions {
+  workspaceId?: string | null;
+  brandId?: string | null;
+}
+
+export function useContentItems(options?: UseContentItemsOptions) {
   const [items, setItems] = useState<ContentItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
   const fetchItems = useCallback(async () => {
+    if (!options?.workspaceId) {
+      setItems([]);
+      setIsLoading(false);
+      return;
+    }
+
     try {
       setIsLoading(true);
       setError(null);
-      const data = await getContentItems(filters);
+      const data = await getContentItems({
+        status: options.status,
+        platform: options.platform,
+        searchQuery: options.searchQuery,
+        workspaceId: options.workspaceId,
+        brandId: options.brandId || undefined,
+      });
       setItems(data);
     } catch (err: any) {
       console.error('Error al cargar lista de contenidos:', err);
@@ -19,7 +36,7 @@ export function useContentItems(filters?: ContentFilterOptions) {
     } finally {
       setIsLoading(false);
     }
-  }, [filters?.status, filters?.platform, filters?.searchQuery]);
+  }, [options?.workspaceId, options?.brandId, options?.status, options?.platform, options?.searchQuery]);
 
   useEffect(() => {
     fetchItems();

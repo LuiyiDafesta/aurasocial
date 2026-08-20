@@ -27,11 +27,21 @@ const CONTENT_ITEM_SELECT = `
 /**
  * Obtiene la lista de contenidos con filtros opcionales por estado y plataforma.
  */
-export async function getContentItems(filters?: ContentFilterOptions): Promise<ContentItem[]> {
+export async function getContentItems(
+  filters?: ContentFilterOptions & { workspaceId?: string; brandId?: string }
+): Promise<ContentItem[]> {
   let query = supabase
     .from('content_items')
     .select(CONTENT_ITEM_SELECT)
     .order('created_at', { ascending: false });
+
+  if (filters?.workspaceId) {
+    query = query.eq('workspace_id', filters.workspaceId);
+  }
+
+  if (filters?.brandId) {
+    query = query.eq('brand_id', filters.brandId);
+  }
 
   if (filters?.status && filters.status !== 'all') {
     query = query.eq('status', filters.status);

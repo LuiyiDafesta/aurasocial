@@ -8,10 +8,16 @@ import { Button } from '../components/common/Button';
 import { useToast } from '../hooks/useToast';
 
 interface ContenidosPageProps {
+  workspaceId?: string | null;
+  brandId?: string | null;
   onSelectContentForReview?: (item: ContentItem) => void;
 }
 
-export function ContenidosPage({ onSelectContentForReview }: ContenidosPageProps) {
+export function ContenidosPage({
+  workspaceId,
+  brandId,
+  onSelectContentForReview,
+}: ContenidosPageProps) {
   const [statusFilter, setStatusFilter] = useState<ContentStatus | 'all'>('all');
   const [platformFilter, setPlatformFilter] = useState<SocialPlatform | 'all'>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -21,6 +27,8 @@ export function ContenidosPage({ onSelectContentForReview }: ContenidosPageProps
     status: statusFilter,
     platform: platformFilter,
     searchQuery: searchQuery,
+    workspaceId: workspaceId,
+    brandId: brandId,
   });
 
   const handleResetFilters = () => {
@@ -72,7 +80,7 @@ export function ContenidosPage({ onSelectContentForReview }: ContenidosPageProps
 
           <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-aura-500/10 text-aura-300 border border-aura-500/20">
             <Sparkles className="w-3.5 h-3.5" />
-            MVP Fase 4
+            Fase 4.1 Datos Reales
           </span>
         </div>
       </div>

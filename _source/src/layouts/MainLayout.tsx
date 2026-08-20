@@ -3,6 +3,8 @@ import { Sidebar, NavigationTab } from './Sidebar';
 import { Header } from './Header';
 import { ToastContainer } from '../components/common/ToastContainer';
 import { User } from '@supabase/supabase-js';
+import { SocialAccount } from '../types/socialAccount';
+import { StatusCounts } from '../types/database';
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -11,7 +13,12 @@ interface MainLayoutProps {
   user: User | null;
   onSignOut: () => void;
   title?: string;
+  workspaceName?: string;
   brandName?: string;
+  socialAccounts?: SocialAccount[];
+  stats?: StatusCounts;
+  isStatsLoading?: boolean;
+  isAccountsLoading?: boolean;
 }
 
 export function MainLayout({
@@ -21,7 +28,12 @@ export function MainLayout({
   user,
   onSignOut,
   title,
+  workspaceName,
   brandName,
+  socialAccounts = [],
+  stats,
+  isStatsLoading = false,
+  isAccountsLoading = false,
 }: MainLayoutProps) {
   return (
     <div className="flex h-screen bg-dark-950 text-slate-100 overflow-hidden">
@@ -29,7 +41,12 @@ export function MainLayout({
       <Sidebar
         currentTab={currentTab}
         onSelectTab={onSelectTab}
+        workspaceName={workspaceName}
         brandName={brandName}
+        socialAccounts={socialAccounts}
+        stats={stats}
+        isStatsLoading={isStatsLoading}
+        isAccountsLoading={isAccountsLoading}
       />
 
       {/* Main Content Area */}
