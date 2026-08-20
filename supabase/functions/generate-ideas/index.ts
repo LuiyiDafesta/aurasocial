@@ -157,25 +157,40 @@ serve(async (req) => {
       );
     }
 
-    // 7. Crear el registro generation_run en estado 'pending' con generation_context
-    const { data: newRun, error: createRunErr } = await supabaseAdmin
+    // 7. Crear el registro generation_run en estado 'pending' con generation_context (con fallback defensivo)
+    const insertPayload: Record<string, any> = {
+      workspace_id,
+      brand_id,
+      user_id: user.id,
+      workflow_name: "WF01",
+      status: "pending",
+      started_at: null,
+      generation_context: sanitizedContext,
+    };
+
+    let { data: newRun, error: createRunErr } = await supabaseAdmin
       .from("generation_runs")
-      .insert({
-        workspace_id,
-        brand_id,
-        user_id: user.id,
-        workflow_name: "WF01",
-        status: "pending",
-        started_at: null,
-        generation_context: sanitizedContext,
-      })
-      .select("id, status, created_at, generation_context")
+      .insert(insertPayload)
+      .select("id, status, created_at")
       .single();
+
+    // Fallback defensivo si la columna generation_context aún no fue creada en PostgreSQL
+    if (createRunErr && (createRunErr.message?.includes("generation_context") || createRunErr.code === "PGRST204" || createRunErr.message?.includes("column"))) {
+      console.warn("Columna generation_context no detectada en generation_runs. Reintentando inserción base...");
+      delete insertPayload.generation_context;
+      const fallback = await supabaseAdmin
+        .from("generation_runs")
+        .insert(insertPayload)
+        .select("id, status, created_at")
+        .single();
+      newRun = fallback.data;
+      createRunErr = fallback.error;
+    }
 
     if (createRunErr || !newRun) {
       console.error("Error al crear generation_run:", createRunErr);
       return new Response(
-        JSON.stringify({ error: "Error al registrar la ejecución en la base de datos" }),
+        JSON.stringify({ error: `Error al registrar la ejecución en la base de datos: ${createRunErr?.message || 'Error desconocido'}` }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }

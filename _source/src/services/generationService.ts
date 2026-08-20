@@ -32,7 +32,16 @@ export async function triggerIdeaGeneration(
 
   if (error) {
     console.error('Error al invocar Edge Function generate-ideas:', error);
-    throw new Error(error.message || 'Error al iniciar la generación de ideas');
+    let errorDetail = error.message;
+    try {
+      if (error.context && typeof error.context.json === 'function') {
+        const errJson = await error.context.json();
+        if (errJson?.error) {
+          errorDetail = errJson.error;
+        }
+      }
+    } catch (_) {}
+    throw new Error(errorDetail || 'Error al iniciar la generación de ideas');
   }
 
   if (!data?.run_id) {
