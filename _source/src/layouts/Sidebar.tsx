@@ -57,7 +57,7 @@ export function Sidebar({
 
   const navItems = [
     { id: 'dashboard' as NavigationTab, label: 'Dashboard', icon: LayoutDashboard, isPlaceholder: true },
-    { id: 'ideas' as NavigationTab, label: 'Ideas', icon: Lightbulb, isPlaceholder: true },
+    { id: 'ideas' as NavigationTab, label: 'Ideas', icon: Lightbulb, isPlaceholder: false },
     { id: 'contenidos' as NavigationTab, label: 'Contenidos', icon: Layers, isPlaceholder: false, isPrimary: true },
     { id: 'calendario' as NavigationTab, label: 'Calendario', icon: Calendar, isPlaceholder: true },
     { id: 'analytics' as NavigationTab, label: 'Analytics', icon: BarChart3, isPlaceholder: true },

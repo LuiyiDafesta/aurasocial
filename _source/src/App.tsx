@@ -8,7 +8,8 @@ import { MainLayout } from './layouts/MainLayout';
 import { NavigationTab } from './layouts/Sidebar';
 import { PlaceholderPage } from './pages/PlaceholderPage';
 import { ContenidosPage } from './pages/ContenidosPage';
-import { LayoutDashboard, Lightbulb, Calendar, BarChart3, Loader2 } from 'lucide-react';
+import { IdeasPage } from './pages/IdeasPage';
+import { LayoutDashboard, Calendar, BarChart3, Loader2 } from 'lucide-react';
 
 export default function App() {
   const { user, isLoading: isAuthLoading, signOut, isAuthenticated } = useAuth();
@@ -60,10 +61,10 @@ export default function App() {
         );
       case 'ideas':
         return (
-          <PlaceholderPage
-            title="Banco de Ideas (WF01)"
-            description="Estrategia y conceptos semanales generados por la IA para su posterior producción en contenidos."
-            icon={Lightbulb}
+          <IdeasPage
+            workspaceId={currentWorkspace?.id}
+            brandId={currentBrand?.id}
+            brandName={currentBrand?.name}
           />
         );
       case 'calendario':
