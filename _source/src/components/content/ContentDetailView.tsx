@@ -1,10 +1,18 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { ContentItem } from '../../types/contentItem';
-import { getContentItemById } from '../../services/contentItemsService';
+import { 
+  getContentItemById, 
+  approveContent, 
+  rejectContent, 
+  scheduleContent 
+} from '../../services/contentItemsService';
 import { PlatformBadge } from './PlatformBadge';
 import { StatusBadge } from './StatusBadge';
+import { ScheduleModal } from './ScheduleModal';
+import { ConfirmDialog } from '../common/ConfirmDialog';
 import { formatInArgentina } from '../../lib/dateUtils';
 import { Button } from '../common/Button';
+import { useToast } from '../../hooks/useToast';
 import { 
   ArrowLeft, 
   Calendar, 
@@ -22,7 +30,10 @@ import {
   Film, 
   Image as ImageIcon,
   Loader2,
-  AlertCircle
+  AlertCircle,
+  Check,
+  X,
+  CalendarCheck
 } from 'lucide-react';
 
 interface ContentDetailViewProps {
@@ -34,36 +45,91 @@ export function ContentDetailView({ contentId, onBack }: ContentDetailViewProps)
   const [item, setItem] = useState<ContentItem | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [isActionLoading, setIsActionLoading] = useState<boolean>(false);
+
+  // Modales de confirmación y programación
+  const [isRejectConfirmOpen, setIsRejectConfirmOpen] = useState<boolean>(false);
+  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState<boolean>(false);
+
+  const { toast } = useToast();
+
+  const fetchDetail = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const data = await getContentItemById(contentId);
+      setItem(data);
+    } catch (err: any) {
+      console.error('Error al cargar detalle de contenido:', err);
+      setError(err.message || 'No se pudo cargar el contenido.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [contentId]);
 
   useEffect(() => {
-    let isMounted = true;
-
-    async function fetchDetail() {
-      try {
-        setIsLoading(true);
-        setError(null);
-        const data = await getContentItemById(contentId);
-        if (isMounted) {
-          setItem(data);
-        }
-      } catch (err: any) {
-        console.error('Error al cargar detalle de contenido:', err);
-        if (isMounted) {
-          setError(err.message || 'No se pudo cargar el contenido.');
-        }
-      } finally {
-        if (isMounted) {
-          setIsLoading(false);
-        }
-      }
-    }
-
     fetchDetail();
+  }, [fetchDetail]);
 
-    return () => {
-      isMounted = false;
-    };
-  }, [contentId]);
+  // 1. Acción: Aprobar
+  const handleApprove = async () => {
+    if (!item || isActionLoading) return;
+
+    try {
+      setIsActionLoading(true);
+      await approveContent(item.id);
+      toast('Contenido aprobado correctamente', { type: 'success' });
+      // Re-consultar el registro actualizado desde Supabase
+      const updated = await getContentItemById(item.id);
+      setItem(updated);
+    } catch (err: any) {
+      console.error('Error al aprobar contenido:', err);
+      toast('Error al aprobar contenido', { type: 'error', description: err.message });
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  // 2. Acción: Rechazar (tras confirmación)
+  const handleConfirmReject = async () => {
+    if (!item || isActionLoading) return;
+
+    try {
+      setIsActionLoading(true);
+      await rejectContent(item.id);
+      setIsRejectConfirmOpen(false);
+      toast('Contenido rechazado correctamente', { type: 'info' });
+      // Re-consultar el registro actualizado desde Supabase
+      const updated = await getContentItemById(item.id);
+      setItem(updated);
+    } catch (err: any) {
+      console.error('Error al rechazar contenido:', err);
+      toast('Error al rechazar contenido', { type: 'error', description: err.message });
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  // 3. Acción: Programar
+  const handleConfirmSchedule = async (scheduledAtIso: string) => {
+    if (!item || isActionLoading) return;
+
+    try {
+      setIsActionLoading(true);
+      await scheduleContent(item.id, scheduledAtIso);
+      setIsScheduleModalOpen(false);
+      toast('Contenido programado correctamente', { type: 'success' });
+      // Re-consultar el registro actualizado desde Supabase
+      const updated = await getContentItemById(item.id);
+      setItem(updated);
+    } catch (err: any) {
+      console.error('Error al programar contenido:', err);
+      toast('Error al programar contenido', { type: 'error', description: err.message });
+      throw err;
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -152,9 +218,7 @@ export function ContentDetailView({ contentId, onBack }: ContentDetailViewProps)
         </Button>
 
         <div className="flex items-center gap-2">
-          <span className="text-[11px] font-semibold uppercase px-2.5 py-1 rounded-md bg-dark-800 text-slate-400 border border-dark-700">
-            Vista de Solo Lectura
-          </span>
+          <StatusBadge status={item.status} size="md" />
         </div>
       </div>
 
@@ -169,7 +233,13 @@ export function ContentDetailView({ contentId, onBack }: ContentDetailViewProps)
             </span>
           </div>
 
-          <StatusBadge status={item.status} size="md" />
+          {/* Quick status message */}
+          {item.status === 'scheduled' && item.scheduled_at && (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-sky-500/10 text-sky-300 border border-sky-500/25">
+              <Clock className="w-3.5 h-3.5" />
+              Programado: {formatInArgentina(item.scheduled_at)}
+            </span>
+          )}
         </div>
 
         {/* Title */}
@@ -209,6 +279,72 @@ export function ContentDetailView({ contentId, onBack }: ContentDetailViewProps)
           <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-dark-800 text-slate-400 border border-dark-700">
             Cuenta Social Vinculada
           </span>
+        </div>
+      </div>
+
+      {/* Action Bar (Barra de Decisiones con la RPC manage_content_item) */}
+      <div className="bg-dark-900/90 border border-dark-800 rounded-2xl p-5 shadow-xl">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h3 className="text-sm font-bold text-white tracking-tight flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-aura-400" />
+              Decisión sobre el Contenido
+            </h3>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Ejecuta acciones de estado mediante la función segura de Supabase.
+            </p>
+          </div>
+
+          {/* Action Buttons depending on status */}
+          <div className="flex items-center gap-2.5 flex-wrap">
+            {/* Published content is strictly read-only */}
+            {item.status === 'published' ? (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-aura-500/10 text-aura-300 border border-aura-500/25">
+                <Send className="w-3.5 h-3.5" />
+                Contenido ya publicado en red social
+              </span>
+            ) : (
+              <>
+                {/* Botón Rechazar (disponible para draft, approved, scheduled) */}
+                {item.status !== 'rejected' && (
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    onClick={() => setIsRejectConfirmOpen(true)}
+                    disabled={isActionLoading}
+                    leftIcon={<X className="w-4 h-4" />}
+                  >
+                    Rechazar
+                  </Button>
+                )}
+
+                {/* Botón Aprobar (disponible para draft o rejected) */}
+                {(item.status === 'draft' || item.status === 'rejected') && (
+                  <Button
+                    variant="success"
+                    size="sm"
+                    onClick={handleApprove}
+                    isLoading={isActionLoading}
+                    leftIcon={<Check className="w-4 h-4" />}
+                  >
+                    Aprobar
+                  </Button>
+                )}
+
+                {/* Botón Programar (disponible para draft, approved, rejected o scheduled como reprogramación) */}
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => setIsScheduleModalOpen(true)}
+                  disabled={isActionLoading}
+                  leftIcon={<CalendarCheck className="w-4 h-4" />}
+                  className="shadow-aura-500/25"
+                >
+                  {item.status === 'scheduled' ? 'Reprogramar' : 'Programar'}
+                </Button>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -415,9 +551,31 @@ export function ContentDetailView({ contentId, onBack }: ContentDetailViewProps)
           Volver a Contenidos
         </Button>
         <span className="text-xs text-slate-400">
-          Aura Social · Revisión de Contenido
+          Aura Social · Gobernanza de Contenido
         </span>
       </div>
+
+      {/* Modal de Confirmación de Rechazo */}
+      <ConfirmDialog
+        isOpen={isRejectConfirmOpen}
+        onClose={() => setIsRejectConfirmOpen(false)}
+        onConfirm={handleConfirmReject}
+        title="¿Querés rechazar este contenido?"
+        message="El contenido pasará al estado Rechazado y no será considerado para publicación automática."
+        confirmText="Sí, rechazar contenido"
+        cancelText="Cancelar"
+        type="danger"
+        isLoading={isActionLoading}
+      />
+
+      {/* Modal de Programación (Hora Argentina) */}
+      <ScheduleModal
+        isOpen={isScheduleModalOpen}
+        onClose={() => setIsScheduleModalOpen(false)}
+        onConfirm={handleConfirmSchedule}
+        item={item}
+        isLoading={isActionLoading}
+      />
     </div>
   );
 }
