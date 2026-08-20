@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ContentFilterBar } from '../components/content/ContentFilterBar';
 import { ContentGrid } from '../components/content/ContentGrid';
+import { ContentDetailView } from '../components/content/ContentDetailView';
 import { useContentItems } from '../hooks/useContentItems';
 import { ContentItem, ContentStatus, SocialPlatform } from '../types/contentItem';
 import { RefreshCw, Sparkles, Layers } from 'lucide-react';
@@ -10,14 +11,10 @@ import { useToast } from '../hooks/useToast';
 interface ContenidosPageProps {
   workspaceId?: string | null;
   brandId?: string | null;
-  onSelectContentForReview?: (item: ContentItem) => void;
 }
 
-export function ContenidosPage({
-  workspaceId,
-  brandId,
-  onSelectContentForReview,
-}: ContenidosPageProps) {
+export function ContenidosPage({ workspaceId, brandId }: ContenidosPageProps) {
+  const [selectedContentId, setSelectedContentId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<ContentStatus | 'all'>('all');
   const [platformFilter, setPlatformFilter] = useState<SocialPlatform | 'all'>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -38,18 +35,22 @@ export function ContenidosPage({
   };
 
   const handleReview = (item: ContentItem) => {
-    if (onSelectContentForReview) {
-      onSelectContentForReview(item);
-    } else {
-      toast(`Seleccionaste: "${item.title}"`, {
-        type: 'info',
-        description: 'El Panel de Revisión Split se conectará en la Fase 5.',
-      });
-    }
+    setSelectedContentId(item.id);
   };
 
+  // Si hay un contenido seleccionado, renderizar la vista de detalle
+  if (selectedContentId) {
+    return (
+      <ContentDetailView
+        contentId={selectedContentId}
+        onBack={() => setSelectedContentId(null)}
+      />
+    );
+  }
+
+  // De lo contrario, renderizar el listado general con filtros
   return (
-    <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-6">
+    <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-6 animate-in fade-in duration-200">
       {/* Header section */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-6 border-b border-dark-800/80">
         <div>
@@ -80,7 +81,7 @@ export function ContenidosPage({
 
           <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-aura-500/10 text-aura-300 border border-aura-500/20">
             <Sparkles className="w-3.5 h-3.5" />
-            Fase 4.1 Datos Reales
+            Fase 5A Revisión
           </span>
         </div>
       </div>
