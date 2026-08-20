@@ -28,7 +28,8 @@ export default function App() {
 
   const { 
     stats, 
-    isLoading: isStatsLoading 
+    isLoading: isStatsLoading,
+    refreshStats
   } = useContentStats(currentWorkspace?.id, currentBrand?.id);
 
   if (isAuthLoading || (isAuthenticated && isWorkspaceLoading)) {
@@ -87,6 +88,7 @@ export default function App() {
           <ContenidosPage
             workspaceId={currentWorkspace?.id}
             brandId={currentBrand?.id}
+            onContentMutated={refreshStats}
           />
         );
     }

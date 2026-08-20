@@ -39,9 +39,10 @@ import {
 interface ContentDetailViewProps {
   contentId: string;
   onBack: () => void;
+  onContentUpdated?: () => void;
 }
 
-export function ContentDetailView({ contentId, onBack }: ContentDetailViewProps) {
+export function ContentDetailView({ contentId, onBack, onContentUpdated }: ContentDetailViewProps) {
   const [item, setItem] = useState<ContentItem | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -82,6 +83,8 @@ export function ContentDetailView({ contentId, onBack }: ContentDetailViewProps)
       // Re-consultar el registro actualizado desde Supabase
       const updated = await getContentItemById(item.id);
       setItem(updated);
+      // Notificar al componente padre para actualizar contadores y grilla
+      onContentUpdated?.();
     } catch (err: any) {
       console.error('Error al aprobar contenido:', err);
       toast('Error al aprobar contenido', { type: 'error', description: err.message });
@@ -102,6 +105,8 @@ export function ContentDetailView({ contentId, onBack }: ContentDetailViewProps)
       // Re-consultar el registro actualizado desde Supabase
       const updated = await getContentItemById(item.id);
       setItem(updated);
+      // Notificar al componente padre para actualizar contadores y grilla
+      onContentUpdated?.();
     } catch (err: any) {
       console.error('Error al rechazar contenido:', err);
       toast('Error al rechazar contenido', { type: 'error', description: err.message });
@@ -122,6 +127,8 @@ export function ContentDetailView({ contentId, onBack }: ContentDetailViewProps)
       // Re-consultar el registro actualizado desde Supabase
       const updated = await getContentItemById(item.id);
       setItem(updated);
+      // Notificar al componente padre para actualizar contadores y grilla
+      onContentUpdated?.();
     } catch (err: any) {
       console.error('Error al programar contenido:', err);
       toast('Error al programar contenido', { type: 'error', description: err.message });

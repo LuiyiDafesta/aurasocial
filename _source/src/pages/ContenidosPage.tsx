@@ -11,9 +11,10 @@ import { useToast } from '../hooks/useToast';
 interface ContenidosPageProps {
   workspaceId?: string | null;
   brandId?: string | null;
+  onContentMutated?: () => void;
 }
 
-export function ContenidosPage({ workspaceId, brandId }: ContenidosPageProps) {
+export function ContenidosPage({ workspaceId, brandId, onContentMutated }: ContenidosPageProps) {
   const [selectedContentId, setSelectedContentId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<ContentStatus | 'all'>('all');
   const [platformFilter, setPlatformFilter] = useState<SocialPlatform | 'all'>('all');
@@ -44,6 +45,10 @@ export function ContenidosPage({ workspaceId, brandId }: ContenidosPageProps) {
       <ContentDetailView
         contentId={selectedContentId}
         onBack={() => setSelectedContentId(null)}
+        onContentUpdated={() => {
+          refreshItems();
+          onContentMutated?.();
+        }}
       />
     );
   }
