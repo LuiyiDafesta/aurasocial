@@ -86,7 +86,7 @@ export function ContenidosPage({ workspaceId, brandId, onContentMutated }: Conte
 
           <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-aura-500/10 text-aura-300 border border-aura-500/20">
             <Sparkles className="w-3.5 h-3.5" />
-            Fase 5A Revisión
+            Revisión de Contenidos
           </span>
         </div>
       </div>

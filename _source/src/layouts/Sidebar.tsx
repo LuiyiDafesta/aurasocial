@@ -301,8 +301,8 @@ export function Sidebar({
       </div>
 
       {/* Footer */}
-      <div className="p-4 border-t border-dark-800/80 text-[11px] text-slate-400 text-center">
-        Aura Social v1.0 · Fase 7
+      <div className="p-4 border-t border-dark-800/80 text-[11px] text-slate-400 text-center font-medium">
+        Aura Social · AI Content Engine
       </div>
     </aside>
   );
