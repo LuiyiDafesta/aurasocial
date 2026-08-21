@@ -19,6 +19,7 @@ import { VersionSnapshotModal } from './VersionSnapshotModal';
 import { VersionDiffModal } from './VersionDiffModal';
 import { VersionHistoryTimeline } from './VersionHistoryTimeline';
 import { ConfirmDialog } from '../common/ConfirmDialog';
+import { AssignToCampaignModal } from '../campaigns/AssignToCampaignModal';
 import { formatInArgentina } from '../../lib/dateUtils';
 import { Button } from '../common/Button';
 import { useToast } from '../../hooks/useToast';
@@ -49,7 +50,9 @@ import {
   MoveRight,
   History,
   Edit3,
-  Save
+  Save,
+  FolderPlus,
+  Target
 } from 'lucide-react';
 
 interface ContentDetailViewProps {
@@ -89,6 +92,7 @@ export function ContentDetailView({ contentId, onBack, onContentUpdated }: Conte
   // Modales de acciones editoriales
   const [isRejectConfirmOpen, setIsRejectConfirmOpen] = useState<boolean>(false);
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState<boolean>(false);
+  const [isAssignCampaignModalOpen, setIsAssignCampaignModalOpen] = useState<boolean>(false);
 
   const { toast } = useToast();
 
@@ -335,6 +339,27 @@ export function ContentDetailView({ contentId, onBack, onContentUpdated }: Conte
             <History className="w-3.5 h-3.5 text-aura-400" />
             v{currentVersionNumber}
           </span>
+
+          {/* Campaign Pill */}
+          {item.campaigns?.name ? (
+            <button
+              onClick={() => setIsAssignCampaignModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-semibold bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/25 transition-colors"
+              title="Organizar en campaña"
+            >
+              <Target className="w-3.5 h-3.5 text-amber-400" />
+              <span>{item.campaigns.name}</span>
+            </button>
+          ) : (
+            <button
+              onClick={() => setIsAssignCampaignModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-semibold bg-slate-500/10 hover:bg-slate-500/20 text-slate-400 border border-slate-500/25 transition-colors"
+              title="Asignar a una campaña"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-slate-400" />
+              <span>Evergreen</span>
+            </button>
+          )}
         </div>
 
         <div className="flex items-center gap-3">
@@ -398,6 +423,16 @@ export function ContentDetailView({ contentId, onBack, onContentUpdated }: Conte
                   className="hover:border-aura-500/50 hover:bg-aura-500/10 text-white font-semibold"
                 >
                   Editar Contenido
+                </Button>
+
+                <Button
+                  variant="outline"
+                  size="md"
+                  onClick={() => setIsAssignCampaignModalOpen(true)}
+                  leftIcon={<FolderPlus className="w-4 h-4 text-aura-400" />}
+                  className="hover:border-aura-500/50 hover:bg-aura-500/10 text-slate-200"
+                >
+                  {item.campaign_id ? 'Mover Campaña' : 'Asignar a Campaña'}
                 </Button>
 
                 {item.status === 'published' ? (
@@ -934,6 +969,21 @@ export function ContentDetailView({ contentId, onBack, onContentUpdated }: Conte
         onConfirm={handleConfirmSchedule}
         item={item}
         isLoading={isActionLoading}
+      />
+
+      {/* Modal de Asignación a Campaña */}
+      <AssignToCampaignModal
+        isOpen={isAssignCampaignModalOpen}
+        onClose={() => setIsAssignCampaignModalOpen(false)}
+        entityType="content"
+        entityId={item.id}
+        entityTitle={item.title}
+        brandId={item.brand_id || ''}
+        currentCampaignId={item.campaign_id}
+        onAssigned={() => {
+          fetchDetail();
+          onContentUpdated?.();
+        }}
       />
 
     </div>

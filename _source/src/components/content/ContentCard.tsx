@@ -3,15 +3,16 @@ import { PlatformBadge } from './PlatformBadge';
 import { StatusBadge } from './StatusBadge';
 import { formatInArgentina } from '../../lib/dateUtils';
 import { Button } from '../common/Button';
-import { Eye, Clock, Calendar, UserCheck, Film, Image as ImageIcon, Clapperboard, Layers } from 'lucide-react';
+import { Eye, Clock, Calendar, UserCheck, Film, Image as ImageIcon, Clapperboard, Layers, FolderPlus, Target } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
 interface ContentCardProps {
   item: ContentItem;
   onReview: (item: ContentItem) => void;
+  onAssignCampaign?: (item: ContentItem) => void;
 }
 
-export function ContentCard({ item, onReview }: ContentCardProps) {
+export function ContentCard({ item, onReview, onAssignCampaign }: ContentCardProps) {
   const accountName = item.social_accounts?.account_name || 'Cuenta vinculada';
   const avatarUrl = item.social_accounts?.metadata?.avatar_url;
   const isVideo = item.content_type?.toLowerCase().includes('video') || item.content_type?.toLowerCase().includes('reel');
@@ -43,6 +44,14 @@ export function ContentCard({ item, onReview }: ContentCardProps) {
           <div className="flex items-center gap-1.5 text-[11px] text-purple-300 bg-purple-950/30 px-2.5 py-1 rounded-lg border border-purple-900/40 truncate">
             <Layers className="w-3 h-3 text-purple-400 shrink-0" />
             <span className="truncate">Idea: {item.content_ideas.title}</span>
+          </div>
+        )}
+
+        {/* Campaign Badge if assigned to a campaign */}
+        {item.campaigns?.name && (
+          <div className="flex items-center gap-1.5 text-[11px] text-amber-300 bg-amber-950/30 px-2.5 py-1 rounded-lg border border-amber-900/40 truncate">
+            <Target className="w-3 h-3 text-amber-400 shrink-0" />
+            <span className="truncate">Campaña: {item.campaigns.name}</span>
           </div>
         )}
 
@@ -107,15 +116,30 @@ export function ContentCard({ item, onReview }: ContentCardProps) {
           )}
         </div>
 
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => onReview(item)}
-          rightIcon={<Eye className="w-3.5 h-3.5 text-aura-400" />}
-          className="hover:border-aura-500/50 hover:bg-aura-500/10 hover:text-white shrink-0"
-        >
-          Revisar
-        </Button>
+        <div className="flex items-center gap-2">
+          {onAssignCampaign && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => onAssignCampaign(item)}
+              leftIcon={<FolderPlus className="w-3.5 h-3.5 text-aura-400" />}
+              className="text-xs text-slate-300 hover:text-white px-2.5 h-8"
+              title={item.campaign_id ? 'Mover o quitar de campaña' : 'Asignar a campaña'}
+            >
+              {item.campaign_id ? 'Mover' : 'Asignar'}
+            </Button>
+          )}
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onReview(item)}
+            rightIcon={<Eye className="w-3.5 h-3.5 text-aura-400" />}
+            className="hover:border-aura-500/50 hover:bg-aura-500/10 hover:text-white shrink-0 text-xs h-8"
+          >
+            Revisar
+          </Button>
+        </div>
       </div>
     </div>
   );

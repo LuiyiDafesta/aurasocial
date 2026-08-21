@@ -10,19 +10,22 @@ import {
   Layers, 
   Flame, 
   ArrowRight,
-  FolderTree
+  FolderTree,
+  FolderPlus
 } from 'lucide-react';
 
 interface IdeaCardProps {
   idea: ContentIdea;
   onProduceContent?: (idea: ContentIdea) => void;
   onNavigateToGeneration?: (generationRunId: string) => void;
+  onAssignCampaign?: (idea: ContentIdea) => void;
 }
 
 export function IdeaCard({ 
   idea, 
   onProduceContent,
   onNavigateToGeneration,
+  onAssignCampaign,
 }: IdeaCardProps) {
   const getPriorityBadge = (priority: IdeaPriority) => {
     switch (priority) {
@@ -175,21 +178,36 @@ export function IdeaCard({
       </div>
 
       {/* Footer Actions */}
-      <div className="pt-3 border-t border-dark-800/80 flex items-center justify-between gap-3">
+      <div className="pt-3 border-t border-dark-800/80 flex items-center justify-between gap-2 flex-wrap">
         <span className="text-[11px] text-slate-400 flex items-center gap-1">
           <Lightbulb className="w-3.5 h-3.5 text-aura-400" />
-          Origen: {idea.source === 'ai' ? 'Estrategia IA' : 'Manual'}
+          {idea.source === 'ai' ? 'Estrategia IA' : 'Manual'}
         </span>
 
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => onProduceContent?.(idea)}
-          rightIcon={<ArrowRight className="w-3.5 h-3.5" />}
-          className="hover:border-aura-500/40 hover:bg-aura-500/10 text-xs"
-        >
-          Producir Contenido
-        </Button>
+        <div className="flex items-center gap-2">
+          {onAssignCampaign && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => onAssignCampaign(idea)}
+              leftIcon={<FolderPlus className="w-3.5 h-3.5 text-aura-400" />}
+              className="text-xs text-slate-300 hover:text-white px-2.5 h-8"
+              title={idea.campaign_id ? 'Mover o quitar de campaña' : 'Asignar a campaña'}
+            >
+              {idea.campaign_id ? 'Mover' : 'Asignar'}
+            </Button>
+          )}
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onProduceContent?.(idea)}
+            rightIcon={<ArrowRight className="w-3.5 h-3.5" />}
+            className="hover:border-aura-500/40 hover:bg-aura-500/10 text-xs h-8"
+          >
+            Producir
+          </Button>
+        </div>
       </div>
     </div>
   );

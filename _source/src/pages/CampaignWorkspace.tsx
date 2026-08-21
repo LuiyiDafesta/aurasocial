@@ -18,6 +18,8 @@ import { ProduceContentModal } from '../components/contents/ProduceContentModal'
 import { ContentCard } from '../components/content/ContentCard';
 import { ContentDetailView } from '../components/content/ContentDetailView';
 import { CampaignFormModal } from '../components/campaigns/CampaignFormModal';
+import { AddIdeaToCampaignModal } from '../components/campaigns/AddIdeaToCampaignModal';
+import { AddContentToCampaignModal } from '../components/campaigns/AddContentToCampaignModal';
 import { 
   ArrowLeft, 
   Target, 
@@ -34,7 +36,8 @@ import {
   Sparkles,
   Edit,
   Loader2,
-  FileBox
+  FileBox,
+  Plus
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
@@ -82,6 +85,10 @@ export function CampaignWorkspace({
 
   const [assets, setAssets] = useState<ContentAsset[]>([]);
   const [isAssetsLoading, setIsAssetsLoading] = useState<boolean>(false);
+
+  // Modales de asignación a campaña
+  const [isAddIdeaModalOpen, setIsAddIdeaModalOpen] = useState<boolean>(false);
+  const [isAddContentModalOpen, setIsAddContentModalOpen] = useState<boolean>(false);
 
   // Sincronizar campaña inicial si cambia prop
   useEffect(() => {
@@ -543,6 +550,22 @@ export function CampaignWorkspace({
       {/* SUBTAB 3: IDEAS */}
       {activeTab === 'ideas' && (
         <div className="space-y-4 animate-in fade-in duration-150">
+          <div className="flex items-center justify-between gap-4 flex-wrap pb-1">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+              Ideas Estratégicas de la Campaña ({ideas.length})
+            </h3>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsAddIdeaModalOpen(true)}
+              leftIcon={<Plus className="w-3.5 h-3.5 text-aura-400" />}
+              className="text-xs bg-dark-900 border-dark-700 hover:bg-dark-800 text-white"
+            >
+              Agregar idea existente
+            </Button>
+          </div>
+
           {isIdeasLoading ? (
             <div className="py-16 text-center text-slate-400">
               <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-aura-400" />
@@ -559,14 +582,26 @@ export function CampaignWorkspace({
               ))}
             </div>
           ) : (
-            <div className="bg-dark-900/60 border border-dark-800 rounded-3xl p-12 text-center space-y-3">
+            <div className="bg-dark-900/60 border border-dark-800 rounded-3xl p-12 text-center space-y-4">
               <div className="w-12 h-12 rounded-2xl bg-aura-500/10 border border-aura-500/20 flex items-center justify-center text-aura-400 mx-auto">
                 <Lightbulb className="w-6 h-6" />
               </div>
-              <h3 className="text-sm font-bold text-white">Todavía no hay ideas asociadas a esta campaña</h3>
-              <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
-                Podés generar ideas desde el módulo general de ideas o asociarlas a esta campaña estratégica.
-              </p>
+              <div className="space-y-1">
+                <h3 className="text-sm font-bold text-white">Esta campaña todavía no tiene ideas</h3>
+                <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
+                  Podés vincular ideas existentes de la marca o generar nuevas ideas para esta campaña.
+                </p>
+              </div>
+              <div className="flex items-center justify-center gap-3 pt-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setIsAddIdeaModalOpen(true)}
+                  leftIcon={<Plus className="w-4 h-4 text-aura-400" />}
+                  className="text-xs bg-dark-950 border-dark-700 hover:bg-dark-800 text-white"
+                >
+                  Agregar idea existente
+                </Button>
+              </div>
             </div>
           )}
         </div>
@@ -575,6 +610,22 @@ export function CampaignWorkspace({
       {/* SUBTAB 4: CONTENIDOS */}
       {activeTab === 'contents' && (
         <div className="space-y-4 animate-in fade-in duration-150">
+          <div className="flex items-center justify-between gap-4 flex-wrap pb-1">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+              Piezas de Contenido Producidas ({contents.length})
+            </h3>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsAddContentModalOpen(true)}
+              leftIcon={<Plus className="w-3.5 h-3.5 text-aura-400" />}
+              className="text-xs bg-dark-900 border-dark-700 hover:bg-dark-800 text-white"
+            >
+              Agregar contenido existente
+            </Button>
+          </div>
+
           {isContentsLoading ? (
             <div className="py-16 text-center text-slate-400">
               <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-aura-400" />
@@ -591,14 +642,26 @@ export function CampaignWorkspace({
               ))}
             </div>
           ) : (
-            <div className="bg-dark-900/60 border border-dark-800 rounded-3xl p-12 text-center space-y-3">
+            <div className="bg-dark-900/60 border border-dark-800 rounded-3xl p-12 text-center space-y-4">
               <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 mx-auto">
                 <Layers className="w-6 h-6" />
               </div>
-              <h3 className="text-sm font-bold text-white">Todavía no produjiste contenidos para esta campaña</h3>
-              <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
-                Seleccioná una idea de la pestaña "Ideas" y haz clic en "Producir Contenido" para que el motor WF02 genere los guiones por escenas.
-              </p>
+              <div className="space-y-1">
+                <h3 className="text-sm font-bold text-white">Esta campaña todavía no tiene contenidos</h3>
+                <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
+                  Podés asociar piezas de contenido existentes o producir contenido desde las ideas de la campaña.
+                </p>
+              </div>
+              <div className="flex items-center justify-center gap-3 pt-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setIsAddContentModalOpen(true)}
+                  leftIcon={<Plus className="w-4 h-4 text-aura-400" />}
+                  className="text-xs bg-dark-950 border-dark-700 hover:bg-dark-800 text-white"
+                >
+                  Agregar contenido existente
+                </Button>
+              </div>
             </div>
           )}
         </div>
@@ -692,6 +755,28 @@ export function CampaignWorkspace({
           run={selectedSession}
         />
       )}
+
+      {/* Modal para agregar ideas existentes */}
+      <AddIdeaToCampaignModal
+        isOpen={isAddIdeaModalOpen}
+        onClose={() => setIsAddIdeaModalOpen(false)}
+        campaign={campaign}
+        onIdeasAssigned={() => {
+          loadIdeas();
+          loadSummaryCounts();
+        }}
+      />
+
+      {/* Modal para agregar contenidos existentes */}
+      <AddContentToCampaignModal
+        isOpen={isAddContentModalOpen}
+        onClose={() => setIsAddContentModalOpen(false)}
+        campaign={campaign}
+        onContentsAssigned={() => {
+          loadContents();
+          loadSummaryCounts();
+        }}
+      />
     </div>
   );
 }

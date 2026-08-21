@@ -7,7 +7,7 @@ async function runPhase8BTests() {
   console.log('================================================================================\n');
 
   const client = new Client({
-    connectionString: 'postgresql://postgres.eeykrgnwfarrljkotvmw:Luiyi260879%40@aws-0-sa-east-1.pooler.supabase.com:6543/postgres',
+    connectionString: 'postgresql://postgres.eeykrgnwfarrljkotvmw:Luiyi260879%40@aws-0-sa-east-1.pooler.supabase.com:5432/postgres',
     ssl: { rejectUnauthorized: false }
   });
 

@@ -4,7 +4,7 @@ const { createClient } = require(path.join(__dirname, '..', '_source', 'node_mod
 
 const SUPABASE_URL = 'https://eeykrgnwfarrljkotvmw.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVleWtyZ253ZmFycmxqa290dm13Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzNTA5OTMsImV4cCI6MjA4NjkyNjk5M30.6iQf2M0gWq6k9X8fGZ5M8M5f5g5g5g5g5g5g5g5g5g';
-const PG_URL = 'postgresql://postgres.eeykrgnwfarrljkotvmw:Luiyi260879%40@aws-0-sa-east-1.pooler.supabase.com:6543/postgres';
+const PG_URL = 'postgresql://postgres.eeykrgnwfarrljkotvmw:Luiyi260879%40@aws-0-sa-east-1.pooler.supabase.com:5432/postgres';
 
 async function runPhase8cTests() {
   console.log('================================================================================');
