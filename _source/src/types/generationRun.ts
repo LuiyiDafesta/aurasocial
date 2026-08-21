@@ -11,6 +11,13 @@ export interface GenerationContext {
   ideas_count?: number;
 }
 
+export interface ResearchSourceItem {
+  title: string;
+  url: string;
+  snippet?: string;
+  score?: number | null;
+}
+
 export interface GenerationRun {
   id: string;
   workspace_id: string;
@@ -23,5 +30,18 @@ export interface GenerationRun {
   ideas_created: number;
   error_message?: string | null;
   generation_context?: GenerationContext | null;
+  research_sources?: ResearchSourceItem[] | null;
+  model_used?: string | null;
+  prompt_version?: string | null;
+  duration_ms?: number | null;
   created_at: string;
 }
+
+export interface PaginatedGenerationRunsResult {
+  runs: GenerationRun[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+

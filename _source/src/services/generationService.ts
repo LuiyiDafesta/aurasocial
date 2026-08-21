@@ -97,3 +97,44 @@ export async function getActiveGenerationRun(
 
   return data as GenerationRun | null;
 }
+
+/**
+ * Obtiene el historial de ejecuciones (generation_runs) paginado para la marca activa.
+ */
+export async function getWorkspaceGenerationRuns(
+  workspaceId: string,
+  brandId: string,
+  page: number = 1,
+  pageSize: number = 12
+): Promise<{ runs: GenerationRun[]; totalCount: number; totalPages: number }> {
+  if (!workspaceId || !brandId) {
+    return { runs: [], totalCount: 0, totalPages: 1 };
+  }
+
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+
+  const { data, count, error } = await supabase
+    .from('generation_runs')
+    .select('*', { count: 'exact' })
+    .eq('workspace_id', workspaceId)
+    .eq('brand_id', brandId)
+    .eq('workflow_name', 'WF01')
+    .order('created_at', { ascending: false })
+    .range(from, to);
+
+  if (error) {
+    console.error('Error al obtener generation_runs:', error);
+    throw new Error(`Error al obtener historial de generaciones: ${error.message}`);
+  }
+
+  const totalCount = count || 0;
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+
+  return {
+    runs: (data as GenerationRun[]) || [],
+    totalCount,
+    totalPages,
+  };
+}
+

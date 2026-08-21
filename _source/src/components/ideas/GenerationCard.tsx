@@ -1,0 +1,163 @@
+import { 
+  Sparkles, 
+  Calendar, 
+  Layers, 
+  Tag, 
+  Globe, 
+  ChevronRight, 
+  Info,
+  CheckCircle2,
+  XCircle,
+  Clock
+} from 'lucide-react';
+import { GenerationRun } from '../../types/generationRun';
+import { formatInArgentina } from '../../lib/dateUtils';
+import { Button } from '../common/Button';
+
+interface GenerationCardProps {
+  run: GenerationRun;
+  onViewIdeas: (run: GenerationRun) => void;
+  onViewDetails: (run: GenerationRun) => void;
+}
+
+export function GenerationCard({
+  run,
+  onViewIdeas,
+  onViewDetails,
+}: GenerationCardProps) {
+  const ctx = run.generation_context;
+  const topic = ctx?.topic || 'Estrategia abierta (Pilares generales)';
+  const keywords = ctx?.keywords || [];
+  const format = ctx?.preferred_format || 'any';
+  const hasWebResearch = ctx?.web_research ?? true;
+
+  const getFormatBadge = (fmt: string) => {
+    switch (fmt?.toLowerCase()) {
+      case 'tiktok': return 'TikTok';
+      case 'reel': return 'Reel';
+      case 'video': return 'Video';
+      case 'carousel': return 'Carrusel';
+      case 'post': return 'Post';
+      default: return 'Cualquier Formato';
+    }
+  };
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'completed':
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-300 border border-emerald-500/25">
+            <CheckCircle2 className="w-3 h-3" />
+            Completada
+          </span>
+        );
+      case 'failed':
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-rose-500/10 text-rose-300 border border-rose-500/25">
+            <XCircle className="w-3 h-3" />
+            Fallida
+          </span>
+        );
+      case 'running':
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-aura-500/10 text-aura-300 border border-aura-500/25 animate-pulse">
+            <Sparkles className="w-3 h-3" />
+            En curso
+          </span>
+        );
+      default:
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-500/10 text-amber-300 border border-amber-500/25">
+            <Clock className="w-3 h-3" />
+            En cola
+          </span>
+        );
+    }
+  };
+
+  return (
+    <div className="bg-dark-900/90 border border-dark-800 rounded-2xl p-5 shadow-xl flex flex-col justify-between space-y-4 hover:border-aura-500/40 transition-all group">
+      {/* Top Header */}
+      <div className="space-y-2.5">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-400 flex items-center justify-center font-black text-xs">
+              <Sparkles className="w-4 h-4" />
+            </div>
+            {getStatusBadge(run.status)}
+          </div>
+          <span className="text-[11px] text-slate-400 font-mono flex items-center gap-1">
+            <Calendar className="w-3 h-3 text-slate-400" />
+            {formatInArgentina(run.created_at)}
+          </span>
+        </div>
+
+        {/* Topic Title */}
+        <h3 className="text-base font-bold text-white tracking-tight leading-snug line-clamp-2">
+          {topic}
+        </h3>
+
+        {/* Tags row */}
+        <div className="flex items-center gap-1.5 flex-wrap text-xs">
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-dark-950 border border-dark-800 text-slate-300 font-medium text-[11px]">
+            <Layers className="w-3 h-3 text-aura-400" />
+            {getFormatBadge(format)}
+          </span>
+
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-dark-950 border border-dark-800 text-slate-300 font-medium text-[11px]">
+            <Globe className="w-3 h-3 text-sky-400" />
+            {hasWebResearch ? 'Investigación Web' : 'Sin Búsqueda Web'}
+          </span>
+
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-dark-950 border border-dark-800 text-slate-300 font-medium text-[11px]">
+            <Sparkles className="w-3 h-3 text-amber-400" />
+            {run.ideas_created || 5} ideas
+          </span>
+        </div>
+
+        {/* Keywords Preview */}
+        {keywords.length > 0 && (
+          <div className="flex items-center gap-1.5 flex-wrap pt-1">
+            <Tag className="w-3 h-3 text-slate-500 shrink-0" />
+            {keywords.slice(0, 4).map((kw, i) => (
+              <span
+                key={i}
+                className="text-[11px] text-emerald-400/90 font-mono bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20"
+              >
+                #{kw}
+              </span>
+            ))}
+            {keywords.length > 4 && (
+              <span className="text-[10px] text-slate-500 font-mono">
+                +{keywords.length - 4} más
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Footer Actions */}
+      <div className="pt-3 border-t border-dark-800/80 flex items-center justify-between gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onViewDetails(run)}
+          leftIcon={<Info className="w-3.5 h-3.5" />}
+          className="text-xs"
+        >
+          Ver Contexto
+        </Button>
+
+        <Button
+          variant="primary"
+          size="sm"
+          onClick={() => onViewIdeas(run)}
+          rightIcon={<ChevronRight className="w-3.5 h-3.5" />}
+          className="text-xs shadow-aura-500/20"
+        >
+          Ver Ideas ({run.ideas_created || 5})
+        </Button>
+      </div>
+    </div>
+  );
+}
