@@ -36,6 +36,7 @@ interface IdeasPageProps {
   currentBrand?: Brand | null;
   onSelectBrand?: (brandId: string) => void;
   onRefreshBrands?: () => void;
+  onEditBrand?: (brand: Brand) => void;
   isSwitchingBrand?: boolean;
 }
 
@@ -44,6 +45,7 @@ type MainTab = 'generations' | 'ideas';
 export function IdeasPage({ 
   workspaceId, 
   currentBrand, 
+  onEditBrand,
 }: IdeasPageProps) {
   // Navigation: Primary view is 'generations'
   const [activeTab, setActiveTab] = useState<MainTab>('generations');
@@ -577,14 +579,16 @@ export function IdeasPage({
         onOpenGeneration={handleOpenGenerationWorkspace}
       />
 
-      {/* Modal de Producción de Contenidos WF02 */}
+      {/* Modal de Producción de Contenidos WF02 (Production Studio) */}
       {producingIdea && (
         <ProduceContentModal
           isOpen={!!producingIdea}
           onClose={() => setProducingIdea(null)}
           idea={producingIdea}
           workspaceId={workspaceId || ''}
+          brand={currentBrand}
           brandName={currentBrand?.name}
+          onOpenBrandBrain={onEditBrand}
           onProductionStarted={(contentItemId) => {
             toast('Producción iniciada exitosamente', {
               type: 'success',
