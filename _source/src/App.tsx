@@ -9,13 +9,14 @@ import { NavigationTab } from './layouts/Sidebar';
 import { PlaceholderPage } from './pages/PlaceholderPage';
 import { ContenidosPage } from './pages/ContenidosPage';
 import { IdeasPage } from './pages/IdeasPage';
+import { CampaignsPage } from './pages/CampaignsPage';
 import { BrandFormModal } from './components/brands/BrandFormModal';
 import { Brand } from './types/database';
 import { LayoutDashboard, Calendar, BarChart3, Loader2 } from 'lucide-react';
 
 export default function App() {
   const { user, isLoading: isAuthLoading, signOut, isAuthenticated } = useAuth();
-  const [currentTab, setCurrentTab] = useState<NavigationTab>('contenidos');
+  const [currentTab, setCurrentTab] = useState<NavigationTab>('campaigns');
 
   // Modal de edición / creación de marca global
   const [isBrandModalOpen, setIsBrandModalOpen] = useState<boolean>(false);
@@ -67,6 +68,21 @@ export default function App() {
             title="Dashboard General"
             description="Métricas globales de la marca, publicaciones recientes y estado del pipeline semanal de contenidos."
             icon={LayoutDashboard}
+          />
+        );
+      case 'campaigns':
+        return (
+          <CampaignsPage
+            workspaceId={currentWorkspace?.id}
+            brands={brands}
+            currentBrand={currentBrand}
+            onSelectBrand={selectBrand}
+            onRefreshBrands={refreshBrands}
+            onEditBrand={(b) => {
+              setBrandToEdit(b);
+              setIsBrandModalOpen(true);
+            }}
+            isSwitchingBrand={isSwitchingBrand}
           />
         );
       case 'ideas':

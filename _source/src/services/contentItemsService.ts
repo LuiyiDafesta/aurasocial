@@ -124,6 +124,10 @@ export async function getContentItems(
     query = query.eq('platform', filters.platform);
   }
 
+  if (filters?.campaignId) {
+    query = query.eq('campaign_id', filters.campaignId);
+  }
+
   if (filters?.searchQuery && filters.searchQuery.trim()) {
     const search = `%${filters.searchQuery.trim()}%`;
     query = query.or(`title.ilike.${search},caption.ilike.${search},hook.ilike.${search}`);
