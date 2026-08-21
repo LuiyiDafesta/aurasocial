@@ -135,7 +135,14 @@ export default function App() {
         onSelectTab={setCurrentTab}
         user={user}
         onSignOut={signOut}
-        title={currentTab.charAt(0).toUpperCase() + currentTab.slice(1)}
+        title={
+          currentTab === 'campaigns' ? 'Campañas' :
+          currentTab === 'contenidos' ? 'Contenidos' :
+          currentTab === 'ideas' ? 'Ideas' :
+          currentTab === 'calendario' ? 'Calendario' :
+          currentTab === 'dashboard' ? 'Dashboard' :
+          'Analytics'
+        }
         workspaceName={currentWorkspace?.name}
         brandName={currentBrand?.name}
         brands={brands}

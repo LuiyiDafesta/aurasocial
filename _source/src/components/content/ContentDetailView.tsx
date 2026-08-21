@@ -294,31 +294,31 @@ export function ContentDetailView({ contentId, onBack, onContentUpdated }: Conte
         </div>
       </div>
 
-      {/* Trazabilidad y Linaje de Fase 7 */}
+      {/* Origen y Estrategia del Contenido */}
       <div className="bg-dark-900/60 border border-dark-800/80 rounded-2xl p-5 shadow-lg space-y-3">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-purple-400 flex items-center gap-1.5">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-aura-400 flex items-center gap-1.5">
           <FolderTree className="w-3.5 h-3.5" />
-          Trazabilidad Determinística (Fase 7)
+          Estrategia y Origen del Contenido
         </h3>
         
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
           <div className="p-3 rounded-xl bg-dark-950/60 border border-dark-800/60 space-y-1">
             <div className="text-[11px] text-slate-400 flex items-center gap-1">
-              <Layers className="w-3 h-3 text-purple-400" />
+              <Layers className="w-3 h-3 text-aura-400" />
               Idea de Origen
             </div>
-            <div className="font-medium text-purple-300 truncate">
-              {item.content_ideas?.title || item.idea_id || 'Generado directamente'}
+            <div className="font-medium text-slate-200 truncate">
+              {item.content_ideas?.title || 'Estrategia abierta'}
             </div>
           </div>
 
           <div className="p-3 rounded-xl bg-dark-950/60 border border-dark-800/60 space-y-1">
             <div className="text-[11px] text-slate-400 flex items-center gap-1">
               <Clapperboard className="w-3 h-3 text-sky-400" />
-              Sesión de Generación
+              Sesión Creativa
             </div>
-            <div className="font-medium text-sky-300 font-mono text-[11px] truncate">
-              {item.generation_run_id ? item.generation_run_id.substring(0, 18) + '...' : 'Sesión directa'}
+            <div className="font-medium text-sky-300 truncate">
+              {item.generation_run_id ? 'Sesión de Marca' : 'Producción directa'}
             </div>
           </div>
 
@@ -344,7 +344,7 @@ export function ContentDetailView({ contentId, onBack, onContentUpdated }: Conte
         </div>
       </div>
 
-      {/* Desglose de Escenas Audiovisuales (Fase 7) */}
+      {/* Desglose de Escenas Audiovisuales */}
       {scenes.length > 0 && (
         <div className="bg-dark-900/90 border border-purple-500/30 rounded-3xl p-6 md:p-8 shadow-xl shadow-purple-950/10 space-y-6">
           <div className="flex items-center justify-between border-b border-dark-800 pb-4">

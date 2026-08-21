@@ -246,7 +246,7 @@ export function CampaignWorkspace({
   }
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-200">
+    <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-6 animate-in fade-in duration-200">
       {/* Top Navigation & Campaign Header */}
       <div className="bg-dark-900/90 border border-dark-800 rounded-3xl p-6 shadow-xl relative overflow-hidden">
         <div className="absolute top-0 right-0 w-80 h-80 bg-aura-500/5 rounded-full blur-3xl pointer-events-none"></div>
