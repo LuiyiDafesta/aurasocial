@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase';
-import { ContentItem, ContentItemUpdateInput, ContentFilterOptions } from '../types/contentItem';
+import { ContentItem, ContentItemUpdateInput, ContentFilterOptions, ProductionBrief } from '../types/contentItem';
 
 const CONTENT_ITEM_SELECT = `
   *,
@@ -21,8 +21,81 @@ const CONTENT_ITEM_SELECT = `
   brands (
     id,
     name
+  ),
+  content_ideas (
+    id,
+    title,
+    pillar
   )
 `;
+
+export interface ProduceContentParams {
+  requestId: string;
+  workspaceId: string;
+  brandId: string;
+  ideaId: string;
+  generationRunId?: string | null;
+  platform: string;
+  contentType: string;
+  brief: ProductionBrief;
+}
+
+export interface ProduceContentResult {
+  content_item_id: string;
+  outbox_event_id: string;
+  is_new: boolean;
+  status: string;
+}
+
+/**
+ * Solicita de forma transaccional e idempotente la producción de contenido para una idea.
+ * Inserta en content_items + production_outbox y dispara el Fast Path hacia WF02.
+ */
+export async function produceContentFromIdea(
+  params: ProduceContentParams
+): Promise<ProduceContentResult> {
+  const { data, error } = await supabase.rpc('create_content_production_request', {
+    p_request_id: params.requestId,
+    p_workspace_id: params.workspaceId,
+    p_brand_id: params.brandId,
+    p_idea_id: params.ideaId,
+    p_generation_run_id: params.generationRunId || null,
+    p_platform: params.platform,
+    p_content_type: params.contentType,
+    p_production_brief: params.brief,
+  });
+
+  if (error) {
+    console.error('Error en create_content_production_request:', error);
+    throw new Error(`Error al solicitar producción: ${error.message}`);
+  }
+
+  const result = data as ProduceContentResult;
+
+  // Fast Path: Dispatch asíncrono hacia WF02
+  const webhookUrl = 'https://flow1.lsnetinformatica.com.ar/webhook/produce-content';
+  const { data: userData } = await supabase.auth.getUser();
+
+  fetch(webhookUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      event_id: result.outbox_event_id,
+      request_id: params.requestId,
+      content_item_id: result.content_item_id,
+      workspace_id: params.workspaceId,
+      brand_id: params.brandId,
+      user_id: userData.user?.id,
+      idea_id: params.ideaId,
+      generation_run_id: params.generationRunId,
+      production_brief: params.brief,
+    }),
+  }).catch((err) => {
+    console.warn('Fast Path webhook warning (outbox retry will handle if needed):', err);
+  });
+
+  return result;
+}
 
 /**
  * Obtiene la lista de contenidos con filtros opcionales por estado y plataforma.
@@ -85,7 +158,7 @@ export async function getContentItemById(id: string): Promise<ContentItem> {
 }
 
 /**
- * Actualiza los campos editables de un contenido (title, hook, script, caption, hashtags, cta, creative_direction).
+ * Actualiza los campos editables de un contenido (title, hook, script, caption, hashtags, cta, creative_direction, scenes).
  */
 export async function updateContent(
   id: string,
@@ -102,6 +175,7 @@ export async function updateContent(
   if (input.hashtags !== undefined) payload.hashtags = input.hashtags;
   if (input.cta !== undefined) payload.cta = input.cta;
   if (input.creative_direction !== undefined) payload.creative_direction = input.creative_direction;
+  if (input.scenes !== undefined) payload.scenes = input.scenes;
 
   const { data, error } = await supabase
     .from('content_items')

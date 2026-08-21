@@ -4,7 +4,7 @@ import { Header } from './Header';
 import { ToastContainer } from '../components/common/ToastContainer';
 import { User } from '@supabase/supabase-js';
 import { SocialAccount } from '../types/socialAccount';
-import { StatusCounts } from '../types/database';
+import { StatusCounts, Brand } from '../types/database';
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -15,6 +15,12 @@ interface MainLayoutProps {
   title?: string;
   workspaceName?: string;
   brandName?: string;
+  brands?: Brand[];
+  currentBrand?: Brand | null;
+  onSelectBrand?: (brandId: string) => void;
+  onCreateBrand?: () => void;
+  onEditBrand?: (brand: Brand) => void;
+  isSwitchingBrand?: boolean;
   socialAccounts?: SocialAccount[];
   stats?: StatusCounts;
   isStatsLoading?: boolean;
@@ -30,6 +36,12 @@ export function MainLayout({
   title,
   workspaceName,
   brandName,
+  brands = [],
+  currentBrand = null,
+  onSelectBrand,
+  onCreateBrand,
+  onEditBrand,
+  isSwitchingBrand = false,
   socialAccounts = [],
   stats,
   isStatsLoading = false,
@@ -37,12 +49,18 @@ export function MainLayout({
 }: MainLayoutProps) {
   return (
     <div className="flex h-screen bg-dark-950 text-slate-100 overflow-hidden">
-      {/* Sidebar */}
+      {/* Sidebar con selector global de marcas */}
       <Sidebar
         currentTab={currentTab}
         onSelectTab={onSelectTab}
         workspaceName={workspaceName}
         brandName={brandName}
+        brands={brands}
+        currentBrand={currentBrand}
+        onSelectBrand={onSelectBrand}
+        onCreateBrand={onCreateBrand}
+        onEditBrand={onEditBrand}
+        isSwitchingBrand={isSwitchingBrand}
         socialAccounts={socialAccounts}
         stats={stats}
         isStatsLoading={isStatsLoading}

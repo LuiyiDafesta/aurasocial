@@ -1,19 +1,47 @@
 import { SocialAccount } from './socialAccount';
 
-export type ContentStatus = 'draft' | 'approved' | 'scheduled' | 'published' | 'rejected';
+export type ContentStatus = 'queued' | 'generating' | 'draft' | 'approved' | 'scheduled' | 'published' | 'rejected';
 
 export type SocialPlatform = 'instagram' | 'facebook' | 'tiktok' | 'youtube' | 'linkedin' | string;
 
 export interface ContentBrandInfo {
   id: string;
   name: string;
+  avatar_url?: string | null;
+}
+
+export interface ContentIdeaInfo {
+  id: string;
+  title: string;
+  pillar?: string | null;
+}
+
+export interface Scene {
+  scene_number: number;
+  duration_seconds: number;
+  visual_direction: string;
+  camera_direction?: string;
+  on_screen_text: string;
+  voiceover: string;
+  transition?: string;
+}
+
+export interface ProductionBrief {
+  target_platform: string;
+  target_format: string;
+  target_goal?: string;
+  duration_preference?: string;
+  custom_instructions?: string;
+  [key: string]: any;
 }
 
 export interface ContentItem {
   id: string;
+  request_id?: string | null;
   idea_id?: string | null;
   brand_id?: string | null;
   workspace_id?: string | null;
+  generation_run_id?: string | null;
   social_account_id?: string | null;
   provider_connection_id?: string | null;
 
@@ -24,10 +52,12 @@ export interface ContentItem {
   hook?: string | null;
   script?: string | null;
   caption?: string | null;
-  hashtags?: string[] | string | null;
+  hashtags?: string[] | null;
   cta?: string | null;
   creative_direction?: string | null;
-  media_requirements?: string[] | string | Record<string, any> | null;
+  media_requirements?: string[] | null;
+  scenes?: Scene[] | null;
+  production_brief?: ProductionBrief | null;
 
   status: ContentStatus;
 
@@ -48,6 +78,7 @@ export interface ContentItem {
   // Joined relations from Supabase PostgREST
   social_accounts?: SocialAccount | null;
   brands?: ContentBrandInfo | null;
+  content_ideas?: ContentIdeaInfo | null;
 }
 
 export interface ContentItemUpdateInput {
@@ -55,9 +86,10 @@ export interface ContentItemUpdateInput {
   hook?: string | null;
   script?: string | null;
   caption?: string | null;
-  hashtags?: string[] | string | null;
+  hashtags?: string[] | null;
   cta?: string | null;
   creative_direction?: string | null;
+  scenes?: Scene[] | null;
 }
 
 export interface ContentFilterOptions {

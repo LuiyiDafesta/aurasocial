@@ -3,7 +3,7 @@ import { PlatformBadge } from './PlatformBadge';
 import { StatusBadge } from './StatusBadge';
 import { formatInArgentina } from '../../lib/dateUtils';
 import { Button } from '../common/Button';
-import { Eye, Clock, Calendar, UserCheck, Film, Image as ImageIcon } from 'lucide-react';
+import { Eye, Clock, Calendar, UserCheck, Film, Image as ImageIcon, Clapperboard, Layers } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
 interface ContentCardProps {
@@ -15,6 +15,7 @@ export function ContentCard({ item, onReview }: ContentCardProps) {
   const accountName = item.social_accounts?.account_name || 'Cuenta vinculada';
   const avatarUrl = item.social_accounts?.metadata?.avatar_url;
   const isVideo = item.content_type?.toLowerCase().includes('video') || item.content_type?.toLowerCase().includes('reel');
+  const scenesCount = Array.isArray(item.scenes) ? item.scenes.length : 0;
 
   return (
     <div className="bg-dark-900/90 border border-dark-800/90 hover:border-dark-700/90 rounded-2xl p-5 shadow-lg shadow-black/20 flex flex-col justify-between gap-4 transition-all duration-200 group hover:shadow-xl hover:shadow-aura-950/10">
@@ -27,9 +28,23 @@ export function ContentCard({ item, onReview }: ContentCardProps) {
               {isVideo ? <Film className="w-3 h-3 text-aura-400" /> : <ImageIcon className="w-3 h-3 text-slate-400" />}
               {item.content_type || 'Post'}
             </span>
+            {scenesCount > 0 && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-md bg-purple-500/15 text-purple-300 border border-purple-500/30">
+                <Clapperboard className="w-3 h-3 text-purple-400" />
+                {scenesCount} Escenas
+              </span>
+            )}
           </div>
           <StatusBadge status={item.status} size="sm" />
         </div>
+
+        {/* Origin Idea Badge if generated from idea */}
+        {item.content_ideas?.title && (
+          <div className="flex items-center gap-1.5 text-[11px] text-purple-300 bg-purple-950/30 px-2.5 py-1 rounded-lg border border-purple-900/40 truncate">
+            <Layers className="w-3 h-3 text-purple-400 shrink-0" />
+            <span className="truncate">Idea: {item.content_ideas.title}</span>
+          </div>
+        )}
 
         {/* Read-only Connected Social Account */}
         <div className="flex items-center gap-2 py-1 px-2.5 rounded-xl bg-dark-950/60 border border-dark-800/80 text-xs text-slate-300">
@@ -39,7 +54,6 @@ export function ContentCard({ item, onReview }: ContentCardProps) {
               alt={accountName}
               className="w-4 h-4 rounded-full object-cover shrink-0"
               onError={(e) => {
-                // Fallback si falla la imagen
                 (e.target as HTMLElement).style.display = 'none';
               }}
             />
