@@ -4,12 +4,10 @@ import { Brand } from '../types/database';
 import { GenerationRun } from '../types/generationRun';
 import { ContentIdea } from '../types/contentIdea';
 import { ContentItem } from '../types/contentItem';
-import { ContentAsset } from '../types/contentAsset';
 import { getCampaignSummaryCounts } from '../services/campaignService';
 import { getWorkspaceGenerationRuns } from '../services/generationService';
 import { getContentIdeas } from '../services/ideasService';
 import { getContentItems } from '../services/contentItemsService';
-import { supabase } from '../lib/supabase';
 import { Button } from '../components/common/Button';
 import { IdeaCard } from '../components/ideas/IdeaCard';
 import { GenerationCard } from '../components/ideas/GenerationCard';
@@ -20,6 +18,7 @@ import { ContentDetailView } from '../components/content/ContentDetailView';
 import { CampaignFormModal } from '../components/campaigns/CampaignFormModal';
 import { AddIdeaToCampaignModal } from '../components/campaigns/AddIdeaToCampaignModal';
 import { AddContentToCampaignModal } from '../components/campaigns/AddContentToCampaignModal';
+import { AssetManagementStudio } from '../components/assets/AssetManagementStudio';
 import { 
   ArrowLeft, 
   Target, 
@@ -36,7 +35,6 @@ import {
   Sparkles,
   Edit,
   Loader2,
-  FileBox,
   Plus
 } from 'lucide-react';
 import { cn } from '../lib/utils';
@@ -82,9 +80,6 @@ export function CampaignWorkspace({
   const [contents, setContents] = useState<ContentItem[]>([]);
   const [isContentsLoading, setIsContentsLoading] = useState<boolean>(false);
   const [selectedContentId, setSelectedContentId] = useState<string | null>(null);
-
-  const [assets, setAssets] = useState<ContentAsset[]>([]);
-  const [isAssetsLoading, setIsAssetsLoading] = useState<boolean>(false);
 
   // Modales de asignación a campaña
   const [isAddIdeaModalOpen, setIsAddIdeaModalOpen] = useState<boolean>(false);
@@ -162,32 +157,12 @@ export function CampaignWorkspace({
     }
   }, [currentBrand.id, campaign.id]);
 
-  // Cargar Assets de la campaña
-  const loadAssets = useCallback(async () => {
-    try {
-      setIsAssetsLoading(true);
-      const { data, error } = await supabase
-        .from('content_assets')
-        .select('*')
-        .eq('campaign_id', campaign.id)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setAssets((data as unknown as ContentAsset[]) || []);
-    } catch (err) {
-      console.error('Error al cargar assets de campaña:', err);
-    } finally {
-      setIsAssetsLoading(false);
-    }
-  }, [campaign.id]);
-
   // Cargar datos según el tab activo
   useEffect(() => {
     if (activeTab === 'sessions') loadSessions();
     else if (activeTab === 'ideas') loadIdeas();
     else if (activeTab === 'contents') loadContents();
-    else if (activeTab === 'assets') loadAssets();
-  }, [activeTab, loadSessions, loadIdeas, loadContents, loadAssets]);
+  }, [activeTab, loadSessions, loadIdeas, loadContents]);
 
   const getStatusBadge = (status: CampaignStatus) => {
     switch (status) {
@@ -667,51 +642,14 @@ export function CampaignWorkspace({
         </div>
       )}
 
-      {/* SUBTAB 5: ASSETS */}
+      {/* SUBTAB 5: ASSETS (Asset Management Studio) */}
       {activeTab === 'assets' && (
-        <div className="space-y-4 animate-in fade-in duration-150">
-          {isAssetsLoading ? (
-            <div className="py-16 text-center text-slate-400">
-              <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-pink-400" />
-              <span className="text-xs">Cargando assets multimedia de la campaña...</span>
-            </div>
-          ) : assets.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {assets.map((asset) => (
-                <div
-                  key={asset.id}
-                  className="bg-dark-900/90 border border-dark-800 rounded-2xl p-4 flex flex-col justify-between space-y-3"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="w-9 h-9 rounded-xl bg-pink-500/10 border border-pink-500/20 flex items-center justify-center text-pink-400 shrink-0">
-                        <FileBox className="w-4 h-4" />
-                      </div>
-                      <div className="min-w-0">
-                        <h4 className="text-xs font-bold text-white truncate">{asset.name}</h4>
-                        <span className="text-[10px] text-slate-400 font-mono">{asset.asset_type} • {asset.mime_type}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="pt-2 border-t border-dark-800 text-[11px] text-slate-400 flex items-center justify-between">
-                    <span>{(asset.file_size_bytes / 1024).toFixed(1)} KB</span>
-                    <span>{new Date(asset.created_at).toLocaleDateString()}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="bg-dark-900/60 border border-dark-800 rounded-3xl p-12 text-center space-y-3">
-              <div className="w-12 h-12 rounded-2xl bg-pink-500/10 border border-pink-500/20 flex items-center justify-center text-pink-400 mx-auto">
-                <FolderGit2 className="w-6 h-6" />
-              </div>
-              <h3 className="text-sm font-bold text-white">Esta campaña todavía no tiene archivos asociados</h3>
-              <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
-                Los assets de campaña (fotos promocionales, banners, material gráfico) se vincularán aquí.
-              </p>
-            </div>
-          )}
-        </div>
+        <AssetManagementStudio
+          workspaceId={campaign.workspace_id}
+          brand={currentBrand}
+          campaign={campaign}
+          onAssetsChanged={() => loadSummaryCounts()}
+        />
       )}
 
       {/* Modal de edición de campaña */}
