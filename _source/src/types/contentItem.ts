@@ -26,12 +26,34 @@ export interface Scene {
   transition?: string;
 }
 
+export interface InheritedIdeaContext {
+  title: string;
+  concept: string;
+  pillar: string;
+  hook?: string | null;
+  cta?: string | null;
+  original_format?: string | null;
+  original_goal?: string | null;
+}
+
+export interface BrandContextSnapshot {
+  brand_id: string;
+  brand_name: string;
+  industry?: string | null;
+  target_audience?: string | null;
+  voice_tone?: string | null;
+  key_rules?: string[];
+}
+
 export interface ProductionBrief {
   target_platform: string;
   target_format: string;
   target_goal?: string;
+  objective_mode?: 'inherited' | 'custom';
   duration_preference?: string;
   custom_instructions?: string;
+  inherited_idea_context?: InheritedIdeaContext;
+  brand_context_snapshot?: BrandContextSnapshot;
   [key: string]: any;
 }
 

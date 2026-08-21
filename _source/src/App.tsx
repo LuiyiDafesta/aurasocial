@@ -77,6 +77,10 @@ export default function App() {
             currentBrand={currentBrand}
             onSelectBrand={selectBrand}
             onRefreshBrands={refreshBrands}
+            onEditBrand={(b) => {
+              setBrandToEdit(b);
+              setIsBrandModalOpen(true);
+            }}
             isSwitchingBrand={isSwitchingBrand}
           />
         );
