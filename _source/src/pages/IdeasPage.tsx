@@ -11,6 +11,7 @@ import { GenerationDetailModal } from '../components/ideas/GenerationDetailModal
 import { GenerationWorkspace } from '../components/ideas/GenerationWorkspace';
 import { PaginationControls } from '../components/ideas/PaginationControls';
 import { ProduceContentModal } from '../components/contents/ProduceContentModal';
+import { AssignToCampaignModal } from '../components/campaigns/AssignToCampaignModal';
 import { IdeaPriority, ContentIdea, IdeaSortBy } from '../types/contentIdea';
 import { GenerationContext, GenerationRun } from '../types/generationRun';
 import { getBrandIdeaPillars } from '../services/ideasService';
@@ -71,6 +72,7 @@ export function IdeasPage({
   const [isGenerateModalOpen, setIsGenerateModalOpen] = useState<boolean>(false);
   const [inspectedRun, setInspectedRun] = useState<GenerationRun | null>(null);
   const [producingIdea, setProducingIdea] = useState<ContentIdea | null>(null);
+  const [ideaToAssignCampaign, setIdeaToAssignCampaign] = useState<ContentIdea | null>(null);
   const [availablePillars, setAvailablePillars] = useState<string[]>([]);
 
   const { toast } = useToast();
@@ -521,6 +523,7 @@ export function IdeasPage({
                         idea={idea}
                         onProduceContent={handleProduceContent}
                         onNavigateToGeneration={handleNavigateToGenerationFromIdea}
+                        onAssignCampaign={(i) => setIdeaToAssignCampaign(i)}
                       />
                     ))}
                   </div>
@@ -594,6 +597,22 @@ export function IdeasPage({
               type: 'success',
               description: `El contenido #${contentItemId.substring(0, 8)} está siendo redactado y desglosado en escenas por GPT-5.6 Luna.`
             });
+          }}
+        />
+      )}
+
+      {/* Modal de Asignación a Campaña */}
+      {ideaToAssignCampaign && (
+        <AssignToCampaignModal
+          isOpen={!!ideaToAssignCampaign}
+          onClose={() => setIdeaToAssignCampaign(null)}
+          entityType="idea"
+          entityId={ideaToAssignCampaign.id}
+          entityTitle={ideaToAssignCampaign.title}
+          brandId={currentBrand?.id || ''}
+          currentCampaignId={ideaToAssignCampaign.campaign_id}
+          onAssigned={() => {
+            refreshIdeas();
           }}
         />
       )}

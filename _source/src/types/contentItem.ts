@@ -102,6 +102,7 @@ export interface ContentItem {
   social_accounts?: SocialAccount | null;
   brands?: ContentBrandInfo | null;
   content_ideas?: ContentIdeaInfo | null;
+  campaigns?: { id: string; name: string } | null;
 }
 
 export interface ContentItemUpdateInput {

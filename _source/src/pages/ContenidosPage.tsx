@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ContentFilterBar } from '../components/content/ContentFilterBar';
 import { ContentGrid } from '../components/content/ContentGrid';
 import { ContentDetailView } from '../components/content/ContentDetailView';
+import { AssignToCampaignModal } from '../components/campaigns/AssignToCampaignModal';
 import { useContentItems } from '../hooks/useContentItems';
 import { ContentItem, ContentStatus, SocialPlatform } from '../types/contentItem';
 import { RefreshCw, Sparkles, Layers } from 'lucide-react';
@@ -16,6 +17,7 @@ interface ContenidosPageProps {
 
 export function ContenidosPage({ workspaceId, brandId, onContentMutated }: ContenidosPageProps) {
   const [selectedContentId, setSelectedContentId] = useState<string | null>(null);
+  const [contentToAssignCampaign, setContentToAssignCampaign] = useState<ContentItem | null>(null);
   const [statusFilter, setStatusFilter] = useState<ContentStatus | 'all'>('all');
   const [platformFilter, setPlatformFilter] = useState<SocialPlatform | 'all'>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -118,7 +120,25 @@ export function ContenidosPage({ workspaceId, brandId, onContentMutated }: Conte
         isLoading={isLoading}
         onReview={handleReview}
         onResetFilters={handleResetFilters}
+        onAssignCampaign={(it) => setContentToAssignCampaign(it)}
       />
+
+      {/* Modal de Asignación a Campaña */}
+      {contentToAssignCampaign && (
+        <AssignToCampaignModal
+          isOpen={!!contentToAssignCampaign}
+          onClose={() => setContentToAssignCampaign(null)}
+          entityType="content"
+          entityId={contentToAssignCampaign.id}
+          entityTitle={contentToAssignCampaign.title}
+          brandId={brandId || ''}
+          currentCampaignId={contentToAssignCampaign.campaign_id}
+          onAssigned={() => {
+            refreshItems();
+            onContentMutated?.();
+          }}
+        />
+      )}
     </div>
   );
 }

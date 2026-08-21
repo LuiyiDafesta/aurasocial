@@ -8,6 +8,7 @@ interface ContentGridProps {
   isLoading: boolean;
   onReview: (item: ContentItem) => void;
   onResetFilters?: () => void;
+  onAssignCampaign?: (item: ContentItem) => void;
 }
 
 export function ContentGrid({
@@ -15,6 +16,7 @@ export function ContentGrid({
   isLoading,
   onReview,
   onResetFilters,
+  onAssignCampaign,
 }: ContentGridProps) {
   if (isLoading) {
     return (
@@ -73,7 +75,12 @@ export function ContentGrid({
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
       {items.map((item) => (
-        <ContentCard key={item.id} item={item} onReview={onReview} />
+        <ContentCard
+          key={item.id}
+          item={item}
+          onReview={onReview}
+          onAssignCampaign={onAssignCampaign}
+        />
       ))}
     </div>
   );
