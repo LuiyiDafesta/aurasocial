@@ -62,9 +62,11 @@ export interface Brand {
   business_profile?: BusinessProfile | null;
   audience_profile?: AudienceProfile | null;
   voice_profile?: VoiceProfile | null;
-  competitor_profile?: CompetitorProfile | null;
-  assets_profile?: AssetsProfile | null;
-  ai_settings?: AiSettings | null;
+  strategic_limits?: {
+    rules?: string[];
+    limits?: string[];
+    legal_restrictions?: string[];
+  } | null;
   is_active?: boolean;
   created_at: string;
   updated_at: string;
