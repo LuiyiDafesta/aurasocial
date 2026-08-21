@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import { ContentItem, ContentItemUpdateInput, ContentFilterOptions, ProductionBrief } from '../types/contentItem';
+import { createContentVersion } from './contentVersionService';
 
 const CONTENT_ITEM_SELECT = `
   *,
@@ -162,38 +163,38 @@ export async function getContentItemById(id: string): Promise<ContentItem> {
 }
 
 /**
- * Actualiza los campos editables de un contenido (title, hook, script, caption, hashtags, cta, creative_direction, scenes).
+ * Actualiza los campos de un contenido creando una nueva versión inmutable (human_edit)
+ * vía la RPC transaccional create_content_version().
  */
 export async function updateContent(
   id: string,
   input: ContentItemUpdateInput
 ): Promise<ContentItem> {
-  const payload: Record<string, any> = {
-    updated_at: new Date().toISOString(),
-  };
+  const current = await getContentItemById(id);
 
-  if (input.title !== undefined) payload.title = input.title;
-  if (input.hook !== undefined) payload.hook = input.hook;
-  if (input.script !== undefined) payload.script = input.script;
-  if (input.caption !== undefined) payload.caption = input.caption;
-  if (input.hashtags !== undefined) payload.hashtags = input.hashtags;
-  if (input.cta !== undefined) payload.cta = input.cta;
-  if (input.creative_direction !== undefined) payload.creative_direction = input.creative_direction;
-  if (input.scenes !== undefined) payload.scenes = input.scenes;
+  const newTitle = input.title !== undefined ? input.title : current.title;
+  if (!newTitle) throw new Error('El título del contenido no puede estar vacío');
 
-  const { data, error } = await supabase
-    .from('content_items')
-    .update(payload)
-    .eq('id', id)
-    .select(CONTENT_ITEM_SELECT)
-    .single();
+  await createContentVersion({
+    content_item_id: id,
+    version_type: 'human_edit',
+    title: newTitle,
+    hook: input.hook !== undefined ? input.hook : current.hook,
+    script: input.script !== undefined ? input.script : current.script,
+    caption: input.caption !== undefined ? input.caption : current.caption,
+    hashtags: input.hashtags !== undefined ? (input.hashtags || []) : (current.hashtags || []),
+    cta: input.cta !== undefined ? input.cta : current.cta,
+    creative_direction: input.creative_direction !== undefined ? input.creative_direction : current.creative_direction,
+    media_requirements: input.media_requirements !== undefined ? (input.media_requirements || []) : (current.media_requirements || []),
+    scenes: input.scenes !== undefined ? (input.scenes || []) : (current.scenes || []),
+    production_brief_snapshot: current.production_brief || {},
+    platform: current.platform,
+    content_type: current.content_type,
+    status: current.status,
+    change_summary: input.change_summary || 'Edición manual de contenido',
+  });
 
-  if (error) {
-    console.error(`Error en updateContent (${id}):`, error);
-    throw new Error(`Error al guardar cambios: ${error.message}`);
-  }
-
-  return data as unknown as ContentItem;
+  return getContentItemById(id);
 }
 
 /**

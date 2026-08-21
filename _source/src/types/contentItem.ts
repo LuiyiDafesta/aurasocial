@@ -112,7 +112,9 @@ export interface ContentItemUpdateInput {
   hashtags?: string[] | null;
   cta?: string | null;
   creative_direction?: string | null;
+  media_requirements?: string[] | null;
   scenes?: Scene[] | null;
+  change_summary?: string | null;
 }
 
 export interface ContentFilterOptions {
