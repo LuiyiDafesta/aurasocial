@@ -9,6 +9,7 @@ export interface GenerationContext {
   preferred_format?: PreferredFormat;
   web_research?: boolean;
   ideas_count?: number;
+  campaign_id?: string | null;
 }
 
 export interface ResearchSourceItem {
@@ -23,6 +24,7 @@ export interface GenerationRun {
   workspace_id: string;
   brand_id: string;
   user_id: string;
+  campaign_id?: string | null;
   workflow_name: string;
   status: GenerationStatus;
   started_at?: string | null;

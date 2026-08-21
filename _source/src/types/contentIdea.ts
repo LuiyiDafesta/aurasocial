@@ -8,6 +8,7 @@ export interface ContentIdea {
   workspace_id: string;
   brand_id: string;
   generation_run_id?: string | null;
+  campaign_id?: string | null;
   title: string;
   concept: string;
   objective: string;
@@ -33,6 +34,7 @@ export interface IdeaFilterOptions {
   workspaceId?: string | null;
   brandId?: string | null;
   generationRunId?: string | null;
+  campaignId?: string | null;
   sortBy?: IdeaSortBy;
   page?: number;
   pageSize?: number;

@@ -64,6 +64,7 @@ export interface ContentItem {
   brand_id?: string | null;
   workspace_id?: string | null;
   generation_run_id?: string | null;
+  campaign_id?: string | null;
   social_account_id?: string | null;
   provider_connection_id?: string | null;
 
