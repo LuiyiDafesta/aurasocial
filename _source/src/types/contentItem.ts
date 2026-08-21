@@ -119,4 +119,5 @@ export interface ContentFilterOptions {
   status?: ContentStatus | 'all';
   platform?: SocialPlatform | 'all';
   searchQuery?: string;
+  campaignId?: string | null;
 }

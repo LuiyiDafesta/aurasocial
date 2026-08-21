@@ -14,14 +14,15 @@ import {
   Youtube,
   Linkedin,
   Globe,
-  Radio
+  Radio,
+  Target
 } from 'lucide-react';
 import { SocialAccount } from '../types/socialAccount';
 import { StatusCounts, Brand } from '../types/database';
 import { BrandSwitcher } from '../components/brands/BrandSwitcher';
 import { cn } from '../lib/utils';
 
-export type NavigationTab = 'dashboard' | 'ideas' | 'contenidos' | 'calendario' | 'analytics';
+export type NavigationTab = 'dashboard' | 'campaigns' | 'ideas' | 'contenidos' | 'calendario' | 'analytics';
 
 interface SidebarProps {
   currentTab: NavigationTab;
@@ -70,6 +71,7 @@ export function Sidebar({
 
   const navItems = [
     { id: 'dashboard' as NavigationTab, label: 'Dashboard', icon: LayoutDashboard, isPlaceholder: true },
+    { id: 'campaigns' as NavigationTab, label: 'Campañas', icon: Target, isPlaceholder: false },
     { id: 'ideas' as NavigationTab, label: 'Ideas', icon: Lightbulb, isPlaceholder: false },
     { id: 'contenidos' as NavigationTab, label: 'Contenidos', icon: Layers, isPlaceholder: false, isPrimary: true },
     { id: 'calendario' as NavigationTab, label: 'Calendario', icon: Calendar, isPlaceholder: true },

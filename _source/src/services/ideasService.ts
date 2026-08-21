@@ -28,6 +28,10 @@ export async function getContentIdeas(options?: IdeaFilterOptions): Promise<Pagi
     query = query.eq('generation_run_id', options.generationRunId);
   }
 
+  if (options?.campaignId) {
+    query = query.eq('campaign_id', options.campaignId);
+  }
+
   if (options?.priority && options.priority !== 'all') {
     query = query.eq('priority', options.priority);
   }
