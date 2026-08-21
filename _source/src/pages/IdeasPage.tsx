@@ -209,8 +209,8 @@ export function IdeasPage({ workspaceId, brandId, brandName }: IdeasPageProps) {
       <div className="space-y-8">
         {Object.entries(groups).map(([runId, groupIdeas]) => {
           const matchingRun = runs.find((r) => r.id === runId);
-          const topic = matchingRun?.generation_context?.topic || 'Generación temática';
-          const format = matchingRun?.generation_context?.preferred_format || 'any';
+          const topic = matchingRun?.generation_context?.topic || (groupIdeas.length > 0 ? `Lote: "${groupIdeas[0].title}"` : 'Generación Temática');
+          const format = matchingRun?.generation_context?.preferred_format || (groupIdeas.length > 0 ? groupIdeas[0].format : 'any');
 
           return (
             <div key={runId} className="space-y-4 bg-dark-900/40 border border-dark-800/80 rounded-2xl p-5 shadow-lg">
@@ -624,14 +624,18 @@ export function IdeasPage({ workspaceId, brandId, brandName }: IdeasPageProps) {
           {!isRunsLoading && runs.length > 0 && (
             <div className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                {runs.map((run) => (
-                  <GenerationCard
-                    key={run.id}
-                    run={run}
-                    onViewIdeas={handleFilterByRun}
-                    onViewDetails={(r) => setInspectedRun(r)}
-                  />
-                ))}
+                {runs.map((run, idx) => {
+                  const seqNum = totalRunsCount - ((runsPage - 1) * 12 + idx);
+                  return (
+                    <GenerationCard
+                      key={run.id}
+                      run={run}
+                      indexNumber={seqNum}
+                      onViewIdeas={handleFilterByRun}
+                      onViewDetails={(r) => setInspectedRun(r)}
+                    />
+                  );
+                })}
               </div>
 
               {/* Server-Side Pagination Bar for Generations */}

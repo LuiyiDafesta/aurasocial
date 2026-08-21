@@ -30,6 +30,7 @@ export interface GenerationRun {
   ideas_created: number;
   error_message?: string | null;
   generation_context?: GenerationContext | null;
+  sample_ideas?: { id: string; title: string; pillar: string; format: string }[] | null;
   research_sources?: ResearchSourceItem[] | null;
   model_used?: string | null;
   prompt_version?: string | null;

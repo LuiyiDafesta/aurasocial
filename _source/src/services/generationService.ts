@@ -99,7 +99,8 @@ export async function getActiveGenerationRun(
 }
 
 /**
- * Obtiene el historial de ejecuciones (generation_runs) paginado para la marca activa.
+ * Obtiene el historial de ejecuciones (generation_runs) paginado para la marca activa
+ * enriquecido con las ideas creadas en cada lote para identificación instantánea.
  */
 export async function getWorkspaceGenerationRuns(
   workspaceId: string,
@@ -128,13 +129,75 @@ export async function getWorkspaceGenerationRuns(
     throw new Error(`Error al obtener historial de generaciones: ${error.message}`);
   }
 
+  const runs = (data as GenerationRun[]) || [];
   const totalCount = count || 0;
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
+  if (runs.length === 0) {
+    return { runs: [], totalCount: 0, totalPages: 1 };
+  }
+
+  // Enriquecer cada run con sus ideas reales para identificar temática de inmediato
+  try {
+    const runIds = runs.map((r) => r.id);
+    const { data: linkedIdeas } = await supabase
+      .from('content_ideas')
+      .select('id, title, pillar, format, created_at, generation_run_id')
+      .eq('workspace_id', workspaceId)
+      .eq('brand_id', brandId)
+      .in('generation_run_id', runIds);
+
+    const ideasByRunId = new Map<string, { id: string; title: string; pillar: string; format: string }[]>();
+    for (const idea of linkedIdeas || []) {
+      if (idea.generation_run_id) {
+        if (!ideasByRunId.has(idea.generation_run_id)) {
+          ideasByRunId.set(idea.generation_run_id, []);
+        }
+        ideasByRunId.get(idea.generation_run_id)!.push({
+          id: idea.id,
+          title: idea.title,
+          pillar: idea.pillar,
+          format: idea.format,
+        });
+      }
+    }
+
+    // Para corridas históricas donde generation_run_id era null, buscar por cercanía de timestamp
+    const { data: allRecentIdeas } = await supabase
+      .from('content_ideas')
+      .select('id, title, pillar, format, created_at, generation_run_id')
+      .eq('workspace_id', workspaceId)
+      .eq('brand_id', brandId)
+      .order('created_at', { ascending: false })
+      .limit(100);
+
+    for (const r of runs) {
+      if (ideasByRunId.has(r.id) && ideasByRunId.get(r.id)!.length > 0) {
+        r.sample_ideas = ideasByRunId.get(r.id)!;
+      } else {
+        // Fallback por proximidad de timestamp
+        const runTime = new Date(r.created_at).getTime();
+        const matches = (allRecentIdeas || []).filter((i) => {
+          const ideaTime = new Date(i.created_at).getTime();
+          return Math.abs(ideaTime - runTime) < 60000;
+        });
+        r.sample_ideas = matches.map((m) => ({
+          id: m.id,
+          title: m.title,
+          pillar: m.pillar,
+          format: m.format,
+        }));
+      }
+    }
+  } catch (err) {
+    console.warn('Error al enriquecer runs con sample_ideas:', err);
+  }
+
   return {
-    runs: (data as GenerationRun[]) || [],
+    runs,
     totalCount,
     totalPages,
   };
 }
+
 
