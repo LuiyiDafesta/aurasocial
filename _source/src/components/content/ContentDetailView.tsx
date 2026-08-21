@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { ContentItem } from '../../types/contentItem';
 import { ContentVersion } from '../../types/contentVersion';
+import { ContentAsset } from '../../types/contentAsset';
 import { 
   getContentItemById, 
   updateContent,
@@ -12,6 +13,11 @@ import {
   getContentVersions, 
   restoreContentVersion 
 } from '../../services/contentVersionService';
+import { 
+  getContentAssets, 
+  deleteAsset, 
+  linkExistingAssetToContent 
+} from '../../services/contentAssetService';
 import { PlatformBadge } from './PlatformBadge';
 import { StatusBadge } from './StatusBadge';
 import { ScheduleModal } from './ScheduleModal';
@@ -20,6 +26,11 @@ import { VersionDiffModal } from './VersionDiffModal';
 import { VersionHistoryTimeline } from './VersionHistoryTimeline';
 import { ConfirmDialog } from '../common/ConfirmDialog';
 import { AssignToCampaignModal } from '../campaigns/AssignToCampaignModal';
+import { AssetCard } from '../assets/AssetCard';
+import { AssetUploadModal } from '../assets/AssetUploadModal';
+import { AssetPickerModal } from '../assets/AssetPickerModal';
+import { AssetPreviewModal } from '../assets/AssetPreviewModal';
+import { AssetDetailsModal } from '../assets/AssetDetailsModal';
 import { formatInArgentina } from '../../lib/dateUtils';
 import { Button } from '../common/Button';
 import { useToast } from '../../hooks/useToast';
@@ -52,7 +63,8 @@ import {
   Edit3,
   Save,
   FolderPlus,
-  Target
+  Target,
+  UploadCloud
 } from 'lucide-react';
 
 interface ContentDetailViewProps {
@@ -94,7 +106,31 @@ export function ContentDetailView({ contentId, onBack, onContentUpdated }: Conte
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState<boolean>(false);
   const [isAssignCampaignModalOpen, setIsAssignCampaignModalOpen] = useState<boolean>(false);
 
+  // Estados de Media & Assets
+  const [contentAssets, setContentAssets] = useState<ContentAsset[]>([]);
+  const [isAssetsLoading, setIsAssetsLoading] = useState<boolean>(false);
+  const [isUploadAssetModalOpen, setIsUploadAssetModalOpen] = useState<boolean>(false);
+  const [isAssetPickerModalOpen, setIsAssetPickerModalOpen] = useState<boolean>(false);
+  const [previewAsset, setPreviewAsset] = useState<ContentAsset | null>(null);
+  const [detailsAsset, setDetailsAsset] = useState<ContentAsset | null>(null);
+  const [assetToDelete, setAssetToDelete] = useState<ContentAsset | null>(null);
+  const [isDeletingAsset, setIsDeletingAsset] = useState<boolean>(false);
+
   const { toast } = useToast();
+
+  const fetchAssets = useCallback(async () => {
+    if (!contentId) return;
+    try {
+      setIsAssetsLoading(true);
+      // Fetch directly by contentItemId
+      const res = await getContentAssets(contentId, item?.brand_id || '');
+      setContentAssets(res.data);
+    } catch (err: any) {
+      console.error('Error al cargar assets de contenido:', err);
+    } finally {
+      setIsAssetsLoading(false);
+    }
+  }, [contentId, item?.brand_id]);
 
   const fetchVersions = useCallback(async () => {
     try {
@@ -140,7 +176,36 @@ export function ContentDetailView({ contentId, onBack, onContentUpdated }: Conte
   useEffect(() => {
     fetchDetail();
     fetchVersions();
-  }, [fetchDetail, fetchVersions]);
+    fetchAssets();
+  }, [fetchDetail, fetchVersions, fetchAssets]);
+
+  const handleLinkExistingAsset = async (sourceAsset: ContentAsset) => {
+    if (!item) return;
+    try {
+      await linkExistingAssetToContent(sourceAsset, item.id);
+      toast(`Asset "${sourceAsset.name}" vinculado a esta pieza de contenido`, { type: 'success' });
+      fetchAssets();
+    } catch (err: any) {
+      console.error('Error al vincular asset:', err);
+      toast('Error al vincular asset', { type: 'error', description: err.message });
+    }
+  };
+
+  const handleDeleteAssetConfirm = async () => {
+    if (!assetToDelete || isDeletingAsset) return;
+    try {
+      setIsDeletingAsset(true);
+      await deleteAsset(assetToDelete.id);
+      toast(`Asset "${assetToDelete.name}" eliminado correctamente`, { type: 'success' });
+      setAssetToDelete(null);
+      fetchAssets();
+    } catch (err: any) {
+      console.error('Error al eliminar asset:', err);
+      toast('Error al eliminar asset', { type: 'error', description: err.message });
+    } finally {
+      setIsDeletingAsset(false);
+    }
+  };
 
   // Guardar Edición Manual (crea versión append-only)
   const handleSaveEdit = async () => {
@@ -555,6 +620,83 @@ export function ContentDetailView({ contentId, onBack, onContentUpdated }: Conte
             </div>
           </div>
         </div>
+      </div>
+
+      {/* SECCIÓN: MEDIA & ASSETS ASOCIADOS */}
+      <div className="bg-dark-900/60 border border-dark-800/80 rounded-2xl p-5 shadow-lg space-y-4">
+        <div className="flex items-center justify-between gap-4 flex-wrap pb-1 border-b border-dark-800/60">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-pink-500/10 border border-pink-500/25 flex items-center justify-center text-pink-400">
+              <Film className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-2">
+                Media & Assets Multimedia ({contentAssets.length})
+              </h3>
+              <p className="text-[11px] text-slate-400">
+                Recursos audiovisuales, banners y materiales gráficos vinculados a esta pieza
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsAssetPickerModalOpen(true)}
+              leftIcon={<FolderPlus className="w-3.5 h-3.5 text-aura-400" />}
+              className="text-xs bg-dark-950 border-dark-700 hover:bg-dark-800 text-white"
+            >
+              Vincular de Biblioteca
+            </Button>
+
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setIsUploadAssetModalOpen(true)}
+              leftIcon={<UploadCloud className="w-3.5 h-3.5" />}
+              className="text-xs bg-aura-600 hover:bg-aura-500 text-white font-semibold"
+            >
+              + Subir Asset
+            </Button>
+          </div>
+        </div>
+
+        {isAssetsLoading ? (
+          <div className="py-8 text-center text-slate-400">
+            <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2 text-pink-400" />
+            <span className="text-xs">Cargando assets asociados...</span>
+          </div>
+        ) : contentAssets.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {contentAssets.map((asset) => (
+              <AssetCard
+                key={asset.id}
+                asset={asset}
+                onPreview={(a) => setPreviewAsset(a)}
+                onViewDetails={(a) => setDetailsAsset(a)}
+                onDelete={(a) => setAssetToDelete(a)}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="p-6 text-center bg-dark-950/40 rounded-xl border border-dark-800/60 space-y-2">
+            <p className="text-xs text-slate-400">
+              Esta pieza de contenido todavía no tiene assets multimedia asociados.
+            </p>
+            <div className="flex items-center justify-center gap-2 pt-1">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsUploadAssetModalOpen(true)}
+                leftIcon={<UploadCloud className="w-3.5 h-3.5" />}
+                className="text-xs bg-dark-900 border-dark-700 hover:bg-dark-800 text-white"
+              >
+                Subir Primer Asset
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Formulario de Edición Manual */}
@@ -984,6 +1126,65 @@ export function ContentDetailView({ contentId, onBack, onContentUpdated }: Conte
           fetchDetail();
           onContentUpdated?.();
         }}
+      />
+
+      {/* Modal de Subida de Asset de Contenido */}
+      <AssetUploadModal
+        isOpen={isUploadAssetModalOpen}
+        onClose={() => setIsUploadAssetModalOpen(false)}
+        workspaceId={item.workspace_id || ''}
+        brandId={item.brand_id || ''}
+        brandName={item.brands?.name}
+        scope="content"
+        contentItemId={item.id}
+        contentTitle={item.title}
+        onAssetUploaded={() => {
+          fetchAssets();
+        }}
+      />
+
+      {/* Modal Selector de Assets (Biblioteca Existente) */}
+      <AssetPickerModal
+        isOpen={isAssetPickerModalOpen}
+        onClose={() => setIsAssetPickerModalOpen(false)}
+        brandId={item.brand_id || ''}
+        title={`Vincular Asset a "${item.title}"`}
+        onSelectAsset={handleLinkExistingAsset}
+      />
+
+      {/* Lightbox Preview Modal */}
+      <AssetPreviewModal
+        isOpen={!!previewAsset}
+        onClose={() => setPreviewAsset(null)}
+        asset={previewAsset}
+      />
+
+      {/* Technical Details Modal */}
+      <AssetDetailsModal
+        isOpen={!!detailsAsset}
+        onClose={() => setDetailsAsset(null)}
+        asset={detailsAsset}
+        onPreview={(a) => {
+          setDetailsAsset(null);
+          setPreviewAsset(a);
+        }}
+        onDelete={(a) => {
+          setDetailsAsset(null);
+          setAssetToDelete(a);
+        }}
+      />
+
+      {/* Confirm Asset Delete Dialog */}
+      <ConfirmDialog
+        isOpen={!!assetToDelete}
+        onClose={() => setAssetToDelete(null)}
+        onConfirm={handleDeleteAssetConfirm}
+        title="¿Eliminar Asset Multimedia?"
+        message={`Se eliminará el asset "${assetToDelete?.name}" asociado a esta pieza de contenido. Esta acción no se puede deshacer.`}
+        confirmText="Eliminar Asset"
+        cancelText="Cancelar"
+        type="danger"
+        isLoading={isDeletingAsset}
       />
 
     </div>

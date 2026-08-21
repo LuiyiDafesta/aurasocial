@@ -1,0 +1,456 @@
+import { supabase } from '../lib/supabase';
+import { 
+  ContentAsset, 
+  AssetScope, 
+  AssetType, 
+  UploadAssetParams, 
+  AssetFilterParams 
+} from '../types/contentAsset';
+
+export const STORAGE_BUCKET = 'aura-media';
+export const MAX_FILE_SIZE_BYTES = 500 * 1024 * 1024; // 500 MB
+
+export const ALLOWED_MIME_TYPES = [
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+  'image/gif',
+  'video/mp4',
+  'video/quicktime',
+  'audio/mpeg',
+  'audio/wav',
+  'application/pdf',
+];
+
+/**
+ * Sanitiza nombres de archivo eliminando path traversal y caracteres inseguros.
+ */
+export function sanitizeFilename(filename: string): string {
+  const nameWithoutPath = filename.split(/[\/\\]/).pop() || 'asset';
+  const clean = nameWithoutPath
+    .replace(/\.\./g, '')
+    .replace(/[^a-zA-Z0-9._-]/g, '_')
+    .substring(0, 100);
+  return clean || 'asset_file';
+}
+
+/**
+ * Construye el storage path canónico según el scope del asset.
+ */
+export function buildStoragePath(
+  workspaceId: string,
+  brandId: string,
+  scope: AssetScope,
+  assetType: AssetType,
+  filename: string,
+  campaignId?: string | null,
+  contentItemId?: string | null
+): string {
+  const cleanName = `${Date.now()}_${sanitizeFilename(filename)}`;
+
+  if (scope === 'brand') {
+    return `${workspaceId}/${brandId}/brand/${assetType}/${cleanName}`;
+  }
+  if (scope === 'campaign') {
+    if (!campaignId) throw new Error('campaignId es requerido para scope campaign');
+    return `${workspaceId}/${brandId}/campaigns/${campaignId}/${cleanName}`;
+  }
+  if (scope === 'content') {
+    if (!contentItemId) throw new Error('contentItemId es requerido para scope content');
+    return `${workspaceId}/${brandId}/contents/${contentItemId}/${cleanName}`;
+  }
+
+  throw new Error(`Scope desconocido: ${scope}`);
+}
+
+/**
+ * Genera una URL firmada temporal (1 hora TTL) para un archivo en el bucket aura-media.
+ */
+export async function getSignedAssetUrl(storagePath: string, expiresInSeconds = 3600): Promise<string> {
+  if (!storagePath) return '';
+
+  const { data, error } = await supabase.storage
+    .from(STORAGE_BUCKET)
+    .createSignedUrl(storagePath, expiresInSeconds);
+
+  if (error) {
+    console.error(`Error al generar Signed URL para ${storagePath}:`, error);
+    return '';
+  }
+
+  return data.signedUrl || '';
+}
+
+/**
+ * Enriquece una lista de assets con URLs firmadas en paralelo.
+ */
+export async function enrichAssetsWithSignedUrls(assets: ContentAsset[]): Promise<ContentAsset[]> {
+  if (!assets || assets.length === 0) return [];
+
+  const promises = assets.map(async (asset) => {
+    try {
+      const signedUrl = await getSignedAssetUrl(asset.storage_path);
+      return { ...asset, signed_url: signedUrl };
+    } catch {
+      return asset;
+    }
+  });
+
+  return Promise.all(promises);
+}
+
+/**
+ * Sube un archivo a Supabase Storage y registra el asset en public.content_assets.
+ */
+export async function uploadAsset({
+  file,
+  workspaceId,
+  brandId,
+  scope,
+  campaignId,
+  contentItemId,
+  assetType,
+  name,
+  metadata = {},
+}: UploadAssetParams): Promise<ContentAsset> {
+  if (!file) throw new Error('Archivo no proporcionado');
+  if (!workspaceId) throw new Error('workspaceId es requerido');
+  if (!brandId) throw new Error('brandId es requerido');
+
+  // 1. Validar tamaño
+  if (file.size > MAX_FILE_SIZE_BYTES) {
+    throw new Error(`El archivo supera el límite de 500 MB (${(file.size / (1024 * 1024)).toFixed(1)} MB)`);
+  }
+
+  // 2. Validar MIME type
+  if (!ALLOWED_MIME_TYPES.includes(file.type)) {
+    throw new Error(`Tipo de archivo no permitido (${file.type || 'desconocido'}). Formatos permitidos: PNG, JPG, WebP, GIF, MP4, MOV, MP3, WAV, PDF.`);
+  }
+
+  // 3. Validar consistencia de scope
+  if (scope === 'brand' && (campaignId || contentItemId)) {
+    throw new Error('Un asset con scope brand no debe tener campaign_id ni content_item_id');
+  }
+  if (scope === 'campaign' && (!campaignId || contentItemId)) {
+    throw new Error('Un asset con scope campaign debe tener campaign_id y no content_item_id');
+  }
+  if (scope === 'content' && !contentItemId) {
+    throw new Error('Un asset con scope content debe tener content_item_id');
+  }
+
+  // 4. Construir path seguro
+  const storagePath = buildStoragePath(
+    workspaceId,
+    brandId,
+    scope,
+    assetType,
+    file.name,
+    campaignId,
+    contentItemId
+  );
+
+  // 5. Subir a Storage
+  const { error: storageError } = await supabase.storage
+    .from(STORAGE_BUCKET)
+    .upload(storagePath, file, {
+      contentType: file.type,
+      upsert: false,
+    });
+
+  if (storageError) {
+    console.error('Error al subir archivo a Storage:', storageError);
+    throw new Error(`Error de Storage: ${storageError.message}`);
+  }
+
+  // 6. Obtener usuario autenticado
+  const { data: userData } = await supabase.auth.getUser();
+  const userId = userData.user?.id || null;
+
+  // 7. Insertar registro en PostgreSQL
+  const assetName = name?.trim() || file.name;
+  const insertPayload = {
+    workspace_id: workspaceId,
+    brand_id: brandId,
+    campaign_id: scope === 'campaign' ? campaignId : null,
+    content_item_id: scope === 'content' ? contentItemId : null,
+    asset_scope: scope,
+    asset_type: assetType,
+    name: assetName,
+    storage_bucket: STORAGE_BUCKET,
+    storage_path: storagePath,
+    mime_type: file.type,
+    file_size_bytes: file.size,
+    metadata: {
+      ...metadata,
+      original_filename: file.name,
+      last_modified: file.lastModified,
+    },
+    created_by: userId,
+  };
+
+  const { data: createdAsset, error: dbError } = await supabase
+    .from('content_assets')
+    .insert(insertPayload)
+    .select('*, campaigns:campaign_id ( id, name ), content_items:content_item_id ( id, title )')
+    .single();
+
+  if (dbError) {
+    console.error('Error al registrar content_assets en DB. Limpiando Storage...', dbError);
+    // Cleanup archivo huérfano en Storage
+    await supabase.storage.from(STORAGE_BUCKET).remove([storagePath]);
+    throw new Error(`Error de Base de Datos: ${dbError.message}`);
+  }
+
+  // 8. Generar signed URL inicial
+  const signedUrl = await getSignedAssetUrl(storagePath);
+
+  return {
+    ...createdAsset,
+    signed_url: signedUrl,
+  } as ContentAsset;
+}
+
+/**
+ * Consulta y filtra assets de manera versátil (con búsqueda, paginación y ordenamiento).
+ */
+export async function searchAssets({
+  brandId,
+  campaignId,
+  contentItemId,
+  scope,
+  assetType,
+  search,
+  sortBy = 'newest',
+  page = 1,
+  limit = 24,
+}: AssetFilterParams): Promise<{ data: ContentAsset[]; total: number }> {
+  if (!brandId) return { data: [], total: 0 };
+
+  let query = supabase
+    .from('content_assets')
+    .select('*, campaigns:campaign_id ( id, name ), content_items:content_item_id ( id, title )', { count: 'exact' })
+    .eq('brand_id', brandId);
+
+  if (campaignId) {
+    query = query.eq('campaign_id', campaignId);
+  }
+
+  if (contentItemId) {
+    query = query.eq('content_item_id', contentItemId);
+  }
+
+  if (scope && scope !== 'all') {
+    query = query.eq('asset_scope', scope);
+  }
+
+  if (assetType && assetType !== 'all') {
+    query = query.eq('asset_type', assetType);
+  }
+
+  if (search && search.trim()) {
+    const term = search.trim();
+    query = query.or(`name.ilike.%${term}%,storage_path.ilike.%${term}%`);
+  }
+
+  // Ordenamiento
+  switch (sortBy) {
+    case 'oldest':
+      query = query.order('created_at', { ascending: true });
+      break;
+    case 'name_asc':
+      query = query.order('name', { ascending: true });
+      break;
+    case 'name_desc':
+      query = query.order('name', { ascending: false });
+      break;
+    case 'size_desc':
+      query = query.order('file_size_bytes', { ascending: false });
+      break;
+    case 'size_asc':
+      query = query.order('file_size_bytes', { ascending: true });
+      break;
+    case 'newest':
+    default:
+      query = query.order('created_at', { ascending: false });
+      break;
+  }
+
+  const from = (page - 1) * limit;
+  const to = from + limit - 1;
+  query = query.range(from, to);
+
+  const { data, count, error } = await query;
+
+  if (error) {
+    console.error('Error al consultar assets:', error);
+    throw new Error(`Error al cargar assets: ${error.message}`);
+  }
+
+  const enriched = await enrichAssetsWithSignedUrls((data || []) as ContentAsset[]);
+
+  return {
+    data: enriched,
+    total: count || 0,
+  };
+}
+
+/**
+ * Consulta los assets institucionales de la marca (asset_scope = 'brand').
+ */
+export async function getBrandAssets(
+  brandId: string,
+  options: Partial<AssetFilterParams> = {}
+): Promise<{ data: ContentAsset[]; total: number }> {
+  return searchAssets({
+    ...options,
+    brandId,
+    scope: 'brand',
+  });
+}
+
+/**
+ * Consulta los assets de una campaña (campaign_id = campaignId).
+ */
+export async function getCampaignAssets(
+  campaignId: string,
+  brandId: string,
+  options: Partial<AssetFilterParams> = {}
+): Promise<{ data: ContentAsset[]; total: number }> {
+  return searchAssets({
+    ...options,
+    brandId,
+    campaignId,
+    scope: 'campaign',
+  });
+}
+
+/**
+ * Consulta los assets vinculados a un contenido (content_item_id = contentItemId).
+ */
+export async function getContentAssets(
+  contentItemId: string,
+  brandId: string,
+  options: Partial<AssetFilterParams> = {}
+): Promise<{ data: ContentAsset[]; total: number }> {
+  return searchAssets({
+    ...options,
+    brandId,
+    contentItemId,
+    scope: 'content',
+  });
+}
+
+/**
+ * Obtiene el detalle de un asset por su ID.
+ */
+export async function getAssetById(assetId: string): Promise<ContentAsset | null> {
+  if (!assetId) return null;
+
+  const { data, error } = await supabase
+    .from('content_assets')
+    .select('*, campaigns:campaign_id ( id, name ), content_items:content_item_id ( id, title )')
+    .eq('id', assetId)
+    .single();
+
+  if (error || !data) {
+    console.error(`Error al obtener asset ${assetId}:`, error);
+    return null;
+  }
+
+  const signedUrl = await getSignedAssetUrl(data.storage_path);
+
+  return {
+    ...data,
+    signed_url: signedUrl,
+  } as ContentAsset;
+}
+
+/**
+ * Elimina un asset de Storage y de la base de datos de manera coordinada.
+ */
+export async function deleteAsset(assetId: string): Promise<void> {
+  if (!assetId) throw new Error('assetId es requerido');
+
+  // 1. Obtener registro para saber el storage_path
+  const { data: asset, error: fetchError } = await supabase
+    .from('content_assets')
+    .select('id, storage_bucket, storage_path')
+    .eq('id', assetId)
+    .single();
+
+  if (fetchError || !asset) {
+    throw new Error('No se encontró el asset a eliminar');
+  }
+
+  // 2. Eliminar de Storage
+  const { error: storageError } = await supabase.storage
+    .from(asset.storage_bucket || STORAGE_BUCKET)
+    .remove([asset.storage_path]);
+
+  if (storageError) {
+    console.warn(`Aviso: Error al eliminar archivo de storage (${asset.storage_path}):`, storageError);
+  }
+
+  // 3. Eliminar fila de content_assets
+  const { error: dbError } = await supabase
+    .from('content_assets')
+    .delete()
+    .eq('id', assetId);
+
+  if (dbError) {
+    console.error('Error al eliminar fila de content_assets:', dbError);
+    throw new Error(`Error al eliminar registro de asset: ${dbError.message}`);
+  }
+}
+
+/**
+ * Asocia lógicamente un asset existente a una pieza de contenido sin duplicar el archivo físico en Storage.
+ */
+export async function linkExistingAssetToContent(
+  sourceAsset: ContentAsset,
+  contentItemId: string
+): Promise<ContentAsset> {
+  if (!sourceAsset) throw new Error('Asset de origen es requerido');
+  if (!contentItemId) throw new Error('contentItemId es requerido');
+
+  const { data: userData } = await supabase.auth.getUser();
+  const userId = userData.user?.id || null;
+
+  const insertPayload = {
+    workspace_id: sourceAsset.workspace_id,
+    brand_id: sourceAsset.brand_id,
+    campaign_id: null,
+    content_item_id: contentItemId,
+    asset_scope: 'content' as AssetScope,
+    asset_type: sourceAsset.asset_type,
+    name: sourceAsset.name,
+    storage_bucket: sourceAsset.storage_bucket,
+    storage_path: sourceAsset.storage_path,
+    mime_type: sourceAsset.mime_type,
+    file_size_bytes: sourceAsset.file_size_bytes,
+    width: sourceAsset.width || null,
+    height: sourceAsset.height || null,
+    duration_seconds: sourceAsset.duration_seconds || null,
+    metadata: {
+      ...sourceAsset.metadata,
+      linked_from_asset_id: sourceAsset.id,
+      linked_at: new Date().toISOString(),
+    },
+    created_by: userId,
+  };
+
+  const { data: created, error } = await supabase
+    .from('content_assets')
+    .insert(insertPayload)
+    .select('*, campaigns:campaign_id ( id, name ), content_items:content_item_id ( id, title )')
+    .single();
+
+  if (error) {
+    console.error('Error al vincular asset existente al contenido:', error);
+    throw new Error(`Error al vincular asset: ${error.message}`);
+  }
+
+  const signedUrl = await getSignedAssetUrl(created.storage_path);
+  return { ...created, signed_url: signedUrl } as ContentAsset;
+}
+
