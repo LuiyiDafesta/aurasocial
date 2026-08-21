@@ -18,8 +18,12 @@ export default function App() {
   // Hooks de datos reales desde Supabase
   const { 
     currentWorkspace, 
+    brands,
     currentBrand, 
-    isLoading: isWorkspaceLoading 
+    isLoading: isWorkspaceLoading,
+    isSwitchingBrand,
+    selectBrand,
+    refreshBrands,
   } = useWorkspace(isAuthenticated);
 
   const { 
@@ -63,8 +67,11 @@ export default function App() {
         return (
           <IdeasPage
             workspaceId={currentWorkspace?.id}
-            brandId={currentBrand?.id}
-            brandName={currentBrand?.name}
+            brands={brands}
+            currentBrand={currentBrand}
+            onSelectBrand={selectBrand}
+            onRefreshBrands={refreshBrands}
+            isSwitchingBrand={isSwitchingBrand}
           />
         );
       case 'calendario':

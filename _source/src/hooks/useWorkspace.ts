@@ -2,15 +2,18 @@ import { useState, useEffect, useCallback } from 'react';
 import { Workspace, Brand } from '../types/database';
 import { getUserWorkspaces, getWorkspaceBrands } from '../services/workspaceService';
 
+const ACTIVE_BRAND_KEY = 'aura_active_brand_id';
+
 export function useWorkspace(isAuthenticated: boolean) {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [currentWorkspace, setCurrentWorkspace] = useState<Workspace | null>(null);
   const [brands, setBrands] = useState<Brand[]>([]);
   const [currentBrand, setCurrentBrand] = useState<Brand | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isSwitchingBrand, setIsSwitchingBrand] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  // 1. Cargar workspaces del usuario
+  // 1. Cargar workspaces y brands del usuario
   const loadWorkspaces = useCallback(async () => {
     if (!isAuthenticated) {
       setWorkspaces([]);
@@ -28,17 +31,20 @@ export function useWorkspace(isAuthenticated: boolean) {
       setWorkspaces(userWorkspaces);
 
       if (userWorkspaces.length > 0) {
-        // Por defecto seleccionamos el primer workspace disponible
         const activeWs = userWorkspaces[0];
         setCurrentWorkspace(activeWs);
 
-        // 2. Cargar brands del workspace activo
+        // Cargar brands del workspace activo
         const wsBrands = await getWorkspaceBrands(activeWs.id);
         setBrands(wsBrands);
 
         if (wsBrands.length > 0) {
-          // Por defecto seleccionamos la primera brand disponible
-          setCurrentBrand(wsBrands[0]);
+          // Recuperar la última marca activa guardada si existe y es válida
+          const savedBrandId = localStorage.getItem(ACTIVE_BRAND_KEY);
+          const found = wsBrands.find((b) => b.id === savedBrandId);
+          const initialBrand = found || wsBrands[0];
+          setCurrentBrand(initialBrand);
+          localStorage.setItem(ACTIVE_BRAND_KEY, initialBrand.id);
         } else {
           setCurrentBrand(null);
         }
@@ -59,26 +65,34 @@ export function useWorkspace(isAuthenticated: boolean) {
     loadWorkspaces();
   }, [loadWorkspaces]);
 
-  // Función para cambiar manualmente de workspace (preparado para multi-workspace)
-  const selectWorkspace = useCallback(async (workspaceId: string) => {
-    const ws = workspaces.find((w) => w.id === workspaceId);
-    if (!ws) return;
-
-    setCurrentWorkspace(ws);
-    try {
-      const wsBrands = await getWorkspaceBrands(ws.id);
-      setBrands(wsBrands);
-      setCurrentBrand(wsBrands.length > 0 ? wsBrands[0] : null);
-    } catch (err: any) {
-      console.error('Error al cambiar workspace:', err);
-    }
-  }, [workspaces]);
-
-  // Función para cambiar manualmente de brand (preparado para multi-brand)
+  // Función para conmutar de marca activa con aislamiento total
   const selectBrand = useCallback((brandId: string) => {
     const b = brands.find((brand) => brand.id === brandId);
-    if (b) setCurrentBrand(b);
+    if (!b) return;
+
+    setIsSwitchingBrand(true);
+    setCurrentBrand(b);
+    localStorage.setItem(ACTIVE_BRAND_KEY, b.id);
+
+    setTimeout(() => {
+      setIsSwitchingBrand(false);
+    }, 150);
   }, [brands]);
+
+  // Recarga solo las marcas (ej. tras crear o editar una marca)
+  const refreshBrands = useCallback(async () => {
+    if (!currentWorkspace) return;
+    try {
+      const wsBrands = await getWorkspaceBrands(currentWorkspace.id);
+      setBrands(wsBrands);
+      if (currentBrand) {
+        const updated = wsBrands.find((b) => b.id === currentBrand.id);
+        if (updated) setCurrentBrand(updated);
+      }
+    } catch (err) {
+      console.error('Error al refrescar marcas:', err);
+    }
+  }, [currentWorkspace, currentBrand]);
 
   return {
     workspaces,
@@ -86,9 +100,10 @@ export function useWorkspace(isAuthenticated: boolean) {
     brands,
     currentBrand,
     isLoading,
+    isSwitchingBrand,
     error,
-    selectWorkspace,
     selectBrand,
+    refreshBrands,
     refreshWorkspace: loadWorkspaces,
   };
 }

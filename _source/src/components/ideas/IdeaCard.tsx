@@ -9,15 +9,21 @@ import {
   Clock, 
   Layers, 
   Flame, 
-  ArrowRight
+  ArrowRight,
+  FolderTree
 } from 'lucide-react';
 
 interface IdeaCardProps {
   idea: ContentIdea;
   onProduceContent?: (idea: ContentIdea) => void;
+  onNavigateToGeneration?: (generationRunId: string) => void;
 }
 
-export function IdeaCard({ idea, onProduceContent }: IdeaCardProps) {
+export function IdeaCard({ 
+  idea, 
+  onProduceContent,
+  onNavigateToGeneration,
+}: IdeaCardProps) {
   const getPriorityBadge = (priority: IdeaPriority) => {
     switch (priority) {
       case 'high':
@@ -89,6 +95,23 @@ export function IdeaCard({ idea, onProduceContent }: IdeaCardProps) {
           </span>
         </div>
 
+        {/* Origin Generation Chip */}
+        <div className="pt-0.5">
+          {idea.generation_run_id ? (
+            <button
+              onClick={() => onNavigateToGeneration?.(idea.generation_run_id!)}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-aura-500/10 hover:bg-aura-500/20 border border-aura-500/20 text-aura-300 text-[10px] font-semibold transition-colors"
+            >
+              <FolderTree className="w-3 h-3" />
+              <span>Ver Sesión de Generación ➔</span>
+            </button>
+          ) : (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-dark-950 border border-dark-800 text-slate-500 text-[10px]">
+              Generación histórica no vinculada
+            </span>
+          )}
+        </div>
+
         {/* Pillar & Format */}
         <div className="flex items-center gap-2 flex-wrap text-xs">
           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-dark-950 border border-dark-800 text-slate-300 font-medium">
@@ -115,7 +138,7 @@ export function IdeaCard({ idea, onProduceContent }: IdeaCardProps) {
         {idea.objective && (
           <div className="space-y-1">
             <span className="text-[10px] uppercase font-semibold text-slate-400 tracking-wider flex items-center gap-1">
-              <Target className="w-3 h-3 text-emerald-400" />
+              <Target className="w-3.5 h-3.5 text-emerald-400" />
               Objetivo Estratégico
             </span>
             <p className="text-xs text-slate-400 leading-relaxed">
@@ -128,7 +151,7 @@ export function IdeaCard({ idea, onProduceContent }: IdeaCardProps) {
         {idea.hook && (
           <div className="space-y-1">
             <span className="text-[10px] uppercase font-semibold text-slate-400 tracking-wider flex items-center gap-1">
-              <Quote className="w-3 h-3 text-amber-400" />
+              <Quote className="w-3.5 h-3.5 text-amber-400" />
               Hook Inicial
             </span>
             <div className="text-xs italic text-amber-200/90 bg-amber-500/5 border border-amber-500/15 p-2.5 rounded-lg">
@@ -141,7 +164,7 @@ export function IdeaCard({ idea, onProduceContent }: IdeaCardProps) {
         {idea.cta && (
           <div className="space-y-1">
             <span className="text-[10px] uppercase font-semibold text-slate-400 tracking-wider flex items-center gap-1">
-              <Sparkles className="w-3 h-3 text-pink-400" />
+              <Sparkles className="w-3.5 h-3.5 text-pink-400" />
               Llamado a la Acción (CTA)
             </span>
             <p className="text-xs text-slate-400">
@@ -151,7 +174,7 @@ export function IdeaCard({ idea, onProduceContent }: IdeaCardProps) {
         )}
       </div>
 
-      {/* Footer Actions (Prepared for WF02) */}
+      {/* Footer Actions */}
       <div className="pt-3 border-t border-dark-800/80 flex items-center justify-between gap-3">
         <span className="text-[11px] text-slate-400 flex items-center gap-1">
           <Lightbulb className="w-3.5 h-3.5 text-aura-400" />
