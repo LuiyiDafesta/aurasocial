@@ -9,11 +9,17 @@ import { NavigationTab } from './layouts/Sidebar';
 import { PlaceholderPage } from './pages/PlaceholderPage';
 import { ContenidosPage } from './pages/ContenidosPage';
 import { IdeasPage } from './pages/IdeasPage';
+import { BrandFormModal } from './components/brands/BrandFormModal';
+import { Brand } from './types/database';
 import { LayoutDashboard, Calendar, BarChart3, Loader2 } from 'lucide-react';
 
 export default function App() {
   const { user, isLoading: isAuthLoading, signOut, isAuthenticated } = useAuth();
   const [currentTab, setCurrentTab] = useState<NavigationTab>('contenidos');
+
+  // Modal de edición / creación de marca global
+  const [isBrandModalOpen, setIsBrandModalOpen] = useState<boolean>(false);
+  const [brandToEdit, setBrandToEdit] = useState<Brand | null>(null);
 
   // Hooks de datos reales desde Supabase
   const { 
@@ -103,20 +109,48 @@ export default function App() {
   };
 
   return (
-    <MainLayout
-      currentTab={currentTab}
-      onSelectTab={setCurrentTab}
-      user={user}
-      onSignOut={signOut}
-      title={currentTab.charAt(0).toUpperCase() + currentTab.slice(1)}
-      workspaceName={currentWorkspace?.name}
-      brandName={currentBrand?.name}
-      socialAccounts={socialAccounts}
-      stats={stats}
-      isStatsLoading={isStatsLoading}
-      isAccountsLoading={isAccountsLoading}
-    >
-      {renderContent()}
-    </MainLayout>
+    <>
+      <MainLayout
+        currentTab={currentTab}
+        onSelectTab={setCurrentTab}
+        user={user}
+        onSignOut={signOut}
+        title={currentTab.charAt(0).toUpperCase() + currentTab.slice(1)}
+        workspaceName={currentWorkspace?.name}
+        brandName={currentBrand?.name}
+        brands={brands}
+        currentBrand={currentBrand}
+        onSelectBrand={selectBrand}
+        onCreateBrand={() => {
+          setBrandToEdit(null);
+          setIsBrandModalOpen(true);
+        }}
+        onEditBrand={(b) => {
+          setBrandToEdit(b);
+          setIsBrandModalOpen(true);
+        }}
+        isSwitchingBrand={isSwitchingBrand}
+        socialAccounts={socialAccounts}
+        stats={stats}
+        isStatsLoading={isStatsLoading}
+        isAccountsLoading={isAccountsLoading}
+      >
+        {renderContent()}
+      </MainLayout>
+
+      {/* Modal global para crear / editar Marca */}
+      {isBrandModalOpen && currentWorkspace && (
+        <BrandFormModal
+          isOpen={isBrandModalOpen}
+          onClose={() => setIsBrandModalOpen(false)}
+          workspaceId={currentWorkspace.id}
+          brandToEdit={brandToEdit}
+          onSaved={() => {
+            setIsBrandModalOpen(false);
+            refreshBrands();
+          }}
+        />
+      )}
+    </>
   );
 }

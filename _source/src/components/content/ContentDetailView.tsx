@@ -15,11 +15,8 @@ import { Button } from '../common/Button';
 import { useToast } from '../../hooks/useToast';
 import { 
   ArrowLeft, 
-  Calendar, 
   Clock, 
   CheckCircle2, 
-  XCircle, 
-  Send, 
   UserCheck, 
   Sparkles, 
   Quote, 
@@ -33,7 +30,14 @@ import {
   AlertCircle,
   Check,
   X,
-  CalendarCheck
+  CalendarCheck,
+  Clapperboard,
+  Video,
+  Layers,
+  FolderTree,
+  Mic,
+  Monitor,
+  MoveRight
 } from 'lucide-react';
 
 interface ContentDetailViewProps {
@@ -80,10 +84,8 @@ export function ContentDetailView({ contentId, onBack, onContentUpdated }: Conte
       setIsActionLoading(true);
       await approveContent(item.id);
       toast('Contenido aprobado correctamente', { type: 'success' });
-      // Re-consultar el registro actualizado desde Supabase
       const updated = await getContentItemById(item.id);
       setItem(updated);
-      // Notificar al componente padre para actualizar contadores y grilla
       onContentUpdated?.();
     } catch (err: any) {
       console.error('Error al aprobar contenido:', err);
@@ -102,10 +104,8 @@ export function ContentDetailView({ contentId, onBack, onContentUpdated }: Conte
       await rejectContent(item.id);
       setIsRejectConfirmOpen(false);
       toast('Contenido rechazado correctamente', { type: 'info' });
-      // Re-consultar el registro actualizado desde Supabase
       const updated = await getContentItemById(item.id);
       setItem(updated);
-      // Notificar al componente padre para actualizar contadores y grilla
       onContentUpdated?.();
     } catch (err: any) {
       console.error('Error al rechazar contenido:', err);
@@ -124,10 +124,8 @@ export function ContentDetailView({ contentId, onBack, onContentUpdated }: Conte
       await scheduleContent(item.id, scheduledAtIso);
       setIsScheduleModalOpen(false);
       toast('Contenido programado correctamente', { type: 'success' });
-      // Re-consultar el registro actualizado desde Supabase
       const updated = await getContentItemById(item.id);
       setItem(updated);
-      // Notificar al componente padre para actualizar contadores y grilla
       onContentUpdated?.();
     } catch (err: any) {
       console.error('Error al programar contenido:', err);
@@ -149,203 +147,144 @@ export function ContentDetailView({ contentId, onBack, onContentUpdated }: Conte
 
   if (error || !item) {
     return (
-      <div className="p-8 max-w-2xl mx-auto my-12 bg-dark-900 border border-dark-800 rounded-2xl text-center space-y-4 shadow-xl">
-        <div className="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/25 flex items-center justify-center text-rose-400 mx-auto">
-          <AlertCircle className="w-6 h-6" />
-        </div>
-        <h3 className="text-lg font-bold text-white tracking-tight">Contenido no encontrado</h3>
-        <p className="text-xs text-slate-400 leading-relaxed max-w-md mx-auto">
-          {error || 'El contenido solicitado no existe o no tenés permisos para acceder a él.'}
-        </p>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onBack}
-          leftIcon={<ArrowLeft className="w-4 h-4" />}
-          className="mt-4"
-        >
+      <div className="p-8 max-w-5xl mx-auto space-y-6">
+        <Button variant="outline" size="sm" onClick={onBack} leftIcon={<ArrowLeft className="w-4 h-4" />}>
           Volver a Contenidos
         </Button>
+        <div className="p-6 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 space-y-3">
+          <div className="flex items-center gap-2 font-semibold text-base">
+            <AlertCircle className="w-5 h-5" />
+            Error al cargar el contenido
+          </div>
+          <p className="text-xs text-rose-200">{error || 'No se encontró el elemento solicitado.'}</p>
+          <Button variant="outline" size="sm" onClick={fetchDetail}>
+            Reintentar
+          </Button>
+        </div>
       </div>
     );
   }
 
-  // Parsear hashtags (seguro ante array, string json o string)
-  const parseHashtags = (raw: any): string[] => {
-    if (!raw) return [];
-    if (Array.isArray(raw)) return raw;
-    if (typeof raw === 'string') {
-      try {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) return parsed;
-      } catch {
-        return raw.split(/[,\s]+/).filter(Boolean);
-      }
-    }
-    return [];
-  };
-
-  // Parsear media requirements (seguro ante array, string json o string)
-  const parseMediaRequirements = (raw: any): string[] => {
-    if (!raw) return [];
-    if (Array.isArray(raw)) return raw;
-    if (typeof raw === 'string') {
-      try {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) return parsed;
-      } catch {
-        return [raw];
-      }
-    }
-    if (typeof raw === 'object') {
-      return Object.values(raw).map((v) => String(v));
-    }
-    return [];
-  };
-
-  const hashtagsList = parseHashtags(item.hashtags);
-  const mediaReqList = parseMediaRequirements(item.media_requirements);
   const accountName = item.social_accounts?.account_name || 'Cuenta vinculada';
-  const accountUsername = item.social_accounts?.username;
   const avatarUrl = item.social_accounts?.metadata?.avatar_url;
   const isVideo = item.content_type?.toLowerCase().includes('video') || item.content_type?.toLowerCase().includes('reel');
 
+  // Procesar hashtags
+  const hashtagsList: string[] = Array.isArray(item.hashtags)
+    ? item.hashtags
+    : typeof item.hashtags === 'string'
+    ? (item.hashtags as string).split(/[\s,]+/).filter(Boolean)
+    : [];
+
+  // Procesar requerimientos multimedia
+  const mediaReqsList: string[] = Array.isArray(item.media_requirements)
+    ? item.media_requirements
+    : typeof item.media_requirements === 'string'
+    ? [item.media_requirements]
+    : [];
+
+  const scenes = Array.isArray(item.scenes) ? item.scenes : [];
+
   return (
-    <div className="p-6 md:p-8 max-w-5xl mx-auto space-y-6 animate-in fade-in duration-200">
-      {/* Top Navigation Bar */}
-      <div className="flex items-center justify-between gap-4 pb-4 border-b border-dark-800/80">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onBack}
-          leftIcon={<ArrowLeft className="w-4 h-4" />}
-          className="hover:border-aura-500/50 hover:bg-aura-500/10 text-slate-300"
-        >
-          Volver a Contenidos
-        </Button>
-
-        <div className="flex items-center gap-2">
-          <StatusBadge status={item.status} size="md" />
-        </div>
-      </div>
-
-      {/* Main Title and Badges */}
-      <div className="space-y-4 bg-dark-900/90 border border-dark-800 rounded-2xl p-6 shadow-xl">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5 flex-wrap">
+    <div className="p-6 md:p-8 max-w-5xl mx-auto space-y-8 animate-in fade-in duration-200">
+      {/* Top Bar: Back & State Badge */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-6 border-b border-dark-800/80">
+        <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onBack}
+            leftIcon={<ArrowLeft className="w-4 h-4" />}
+            className="hover:border-dark-700 text-slate-300"
+          >
+            Volver
+          </Button>
+          <div className="h-5 w-px bg-dark-800" />
+          <div className="flex items-center gap-2">
             <PlatformBadge platform={item.platform} size="md" />
-            <span className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase px-2.5 py-1 rounded-lg bg-dark-800 text-slate-200 border border-dark-700">
+            <span className="inline-flex items-center gap-1 text-xs font-semibold uppercase px-2.5 py-1 rounded-lg bg-dark-800 text-slate-300 border border-dark-700">
               {isVideo ? <Film className="w-3.5 h-3.5 text-aura-400" /> : <ImageIcon className="w-3.5 h-3.5 text-slate-400" />}
               {item.content_type || 'Post'}
             </span>
           </div>
-
-          {/* Quick status message */}
-          {item.status === 'scheduled' && item.scheduled_at && (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-sky-500/10 text-sky-300 border border-sky-500/25">
-              <Clock className="w-3.5 h-3.5" />
-              Programado: {formatInArgentina(item.scheduled_at)}
-            </span>
-          )}
         </div>
 
-        {/* Title */}
-        <h1 className="text-2xl font-bold text-white tracking-tight leading-snug">
-          {item.title || 'Sin título'}
-        </h1>
-
-        {/* Read-Only Connected Social Account Card */}
-        <div className="flex items-center justify-between p-3 rounded-xl bg-dark-950/70 border border-dark-800 text-xs">
-          <div className="flex items-center gap-3">
-            {avatarUrl ? (
-              <img
-                src={avatarUrl}
-                alt={accountName}
-                className="w-8 h-8 rounded-full object-cover border border-dark-700 shrink-0"
-                onError={(e) => {
-                  (e.target as HTMLElement).style.display = 'none';
-                }}
-              />
-            ) : (
-              <div className="w-8 h-8 rounded-full bg-dark-800 border border-dark-700 flex items-center justify-center text-aura-400 shrink-0">
-                <UserCheck className="w-4 h-4" />
-              </div>
-            )}
-            <div>
-              <div className="font-semibold text-white">
-                {accountName}
-              </div>
-              {accountUsername && (
-                <div className="text-[11px] text-slate-400 font-mono">
-                  @{accountUsername}
-                </div>
-              )}
-            </div>
-          </div>
-
-          <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-dark-800 text-slate-400 border border-dark-700">
-            Cuenta Social Vinculada
-          </span>
+        <div className="flex items-center gap-3">
+          <StatusBadge status={item.status} size="md" />
         </div>
       </div>
 
-      {/* Action Bar (Barra de Decisiones con la RPC manage_content_item) */}
-      <div className="bg-dark-900/90 border border-dark-800 rounded-2xl p-5 shadow-xl">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <h3 className="text-sm font-bold text-white tracking-tight flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-aura-400" />
-              Decisión sobre el Contenido
-            </h3>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Ejecuta acciones de estado mediante la función segura de Supabase.
-            </p>
+      {/* Main Header & Actions */}
+      <div className="bg-dark-900/90 border border-dark-800 rounded-3xl p-6 md:p-8 shadow-xl shadow-black/20 space-y-6">
+        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
+          <div className="space-y-3 flex-1 min-w-0">
+            {/* Read-Only Account Header */}
+            <div className="inline-flex items-center gap-2 py-1.5 px-3 rounded-xl bg-dark-950/80 border border-dark-800/80 text-xs text-slate-300">
+              {avatarUrl ? (
+                <img
+                  src={avatarUrl}
+                  alt={accountName}
+                  className="w-4 h-4 rounded-full object-cover shrink-0"
+                  onError={(e) => {
+                    (e.target as HTMLElement).style.display = 'none';
+                  }}
+                />
+              ) : (
+                <UserCheck className="w-4 h-4 text-aura-400 shrink-0" />
+              )}
+              <span>Cuenta vinculada: <strong className="text-white font-medium">{accountName}</strong></span>
+              <span className="text-[10px] text-slate-400 ml-1 font-mono uppercase bg-dark-900 px-1.5 py-0.5 rounded border border-dark-800">
+                Solo Lectura
+              </span>
+            </div>
+
+            <h1 className="text-2xl md:text-3xl font-extrabold text-white tracking-tight leading-tight">
+              {item.title || 'Sin título'}
+            </h1>
           </div>
 
-          {/* Action Buttons depending on status */}
-          <div className="flex items-center gap-2.5 flex-wrap">
-            {/* Published content is strictly read-only */}
+          {/* Action Toolbar */}
+          <div className="flex items-center gap-2.5 flex-wrap shrink-0">
             {item.status === 'published' ? (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-aura-500/10 text-aura-300 border border-aura-500/25">
-                <Send className="w-3.5 h-3.5" />
-                Contenido ya publicado en red social
-              </span>
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-aura-500/10 border border-aura-500/30 text-xs font-semibold text-aura-300">
+                <CheckCircle2 className="w-4 h-4 text-aura-400" />
+                Publicado en {item.platform}
+              </div>
             ) : (
               <>
-                {/* Botón Rechazar (disponible para draft, approved, scheduled) */}
-                {item.status !== 'rejected' && (
+                {item.status !== 'approved' && item.status !== 'scheduled' && (
                   <Button
-                    variant="danger"
-                    size="sm"
-                    onClick={() => setIsRejectConfirmOpen(true)}
-                    disabled={isActionLoading}
-                    leftIcon={<X className="w-4 h-4" />}
-                  >
-                    Rechazar
-                  </Button>
-                )}
-
-                {/* Botón Aprobar (disponible para draft o rejected) */}
-                {(item.status === 'draft' || item.status === 'rejected') && (
-                  <Button
-                    variant="success"
-                    size="sm"
+                    variant="primary"
+                    size="md"
                     onClick={handleApprove}
                     isLoading={isActionLoading}
                     leftIcon={<Check className="w-4 h-4" />}
+                    className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold shadow-lg shadow-emerald-950/40"
                   >
                     Aprobar
                   </Button>
                 )}
 
-                {/* Botón Programar (disponible para draft, approved, rejected o scheduled como reprogramación) */}
+                {item.status !== 'rejected' && (
+                  <Button
+                    variant="outline"
+                    size="md"
+                    onClick={() => setIsRejectConfirmOpen(true)}
+                    isLoading={isActionLoading}
+                    leftIcon={<X className="w-4 h-4" />}
+                    className="hover:border-rose-500/50 hover:bg-rose-500/10 hover:text-rose-300 text-slate-300 font-semibold"
+                  >
+                    Rechazar
+                  </Button>
+                )}
+
                 <Button
-                  variant="primary"
-                  size="sm"
+                  variant="outline"
+                  size="md"
                   onClick={() => setIsScheduleModalOpen(true)}
-                  disabled={isActionLoading}
+                  isLoading={isActionLoading}
                   leftIcon={<CalendarCheck className="w-4 h-4" />}
-                  className="shadow-aura-500/25"
+                  className="hover:border-sky-500/50 hover:bg-sky-500/10 hover:text-sky-300 text-slate-300 font-semibold"
                 >
                   {item.status === 'scheduled' ? 'Reprogramar' : 'Programar'}
                 </Button>
@@ -355,83 +294,150 @@ export function ContentDetailView({ contentId, onBack, onContentUpdated }: Conte
         </div>
       </div>
 
-      {/* Timestamps Section (Strict Argentina Timezone UTC-3) */}
-      <div className="bg-dark-900/60 border border-dark-800/80 rounded-2xl p-5 shadow-lg">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-1.5">
-          <Clock className="w-3.5 h-3.5 text-amber-400" />
-          Historial y Tiempos (Hora Oficial Argentina UTC-3)
+      {/* Trazabilidad y Linaje de Fase 7 */}
+      <div className="bg-dark-900/60 border border-dark-800/80 rounded-2xl p-5 shadow-lg space-y-3">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-purple-400 flex items-center gap-1.5">
+          <FolderTree className="w-3.5 h-3.5" />
+          Trazabilidad Determinística (Fase 7)
         </h3>
         
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
-          {/* Creado */}
           <div className="p-3 rounded-xl bg-dark-950/60 border border-dark-800/60 space-y-1">
             <div className="text-[11px] text-slate-400 flex items-center gap-1">
-              <Calendar className="w-3 h-3 text-slate-400" />
-              Fecha de Creación
+              <Layers className="w-3 h-3 text-purple-400" />
+              Idea de Origen
+            </div>
+            <div className="font-medium text-purple-300 truncate">
+              {item.content_ideas?.title || item.idea_id || 'Generado directamente'}
+            </div>
+          </div>
+
+          <div className="p-3 rounded-xl bg-dark-950/60 border border-dark-800/60 space-y-1">
+            <div className="text-[11px] text-slate-400 flex items-center gap-1">
+              <Clapperboard className="w-3 h-3 text-sky-400" />
+              Sesión de Generación
+            </div>
+            <div className="font-medium text-sky-300 font-mono text-[11px] truncate">
+              {item.generation_run_id ? item.generation_run_id.substring(0, 18) + '...' : 'Sesión directa'}
+            </div>
+          </div>
+
+          <div className="p-3 rounded-xl bg-dark-950/60 border border-dark-800/60 space-y-1">
+            <div className="text-[11px] text-slate-400 flex items-center gap-1">
+              <Clock className="w-3 h-3 text-amber-400" />
+              Fecha de Creación (UTC-3)
             </div>
             <div className="font-medium text-slate-200">
               {formatInArgentina(item.created_at)}
             </div>
           </div>
 
-          {/* Programado */}
-          <div className="p-3 rounded-xl bg-dark-950/60 border border-dark-800/60 space-y-1">
-            <div className="text-[11px] text-slate-400 flex items-center gap-1">
-              <Clock className="w-3 h-3 text-sky-400" />
-              Fecha de Programación
-            </div>
-            <div className="font-medium text-sky-300">
-              {item.scheduled_at ? formatInArgentina(item.scheduled_at) : 'No programado'}
-            </div>
-          </div>
-
-          {/* Aprobado */}
           <div className="p-3 rounded-xl bg-dark-950/60 border border-dark-800/60 space-y-1">
             <div className="text-[11px] text-slate-400 flex items-center gap-1">
               <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-              Fecha de Aprobación
+              Programación
             </div>
             <div className="font-medium text-emerald-300">
-              {item.approved_at ? formatInArgentina(item.approved_at) : 'No aprobado aún'}
+              {item.scheduled_at ? formatInArgentina(item.scheduled_at) : 'No programado'}
             </div>
-          </div>
-
-          {/* Rechazado / Publicado */}
-          <div className="p-3 rounded-xl bg-dark-950/60 border border-dark-800/60 space-y-1">
-            {item.rejected_at ? (
-              <>
-                <div className="text-[11px] text-slate-400 flex items-center gap-1">
-                  <XCircle className="w-3 h-3 text-rose-400" />
-                  Fecha de Rechazo
-                </div>
-                <div className="font-medium text-rose-300">
-                  {formatInArgentina(item.rejected_at)}
-                </div>
-              </>
-            ) : item.published_at ? (
-              <>
-                <div className="text-[11px] text-slate-400 flex items-center gap-1">
-                  <Send className="w-3 h-3 text-aura-400" />
-                  Fecha de Publicación
-                </div>
-                <div className="font-medium text-aura-300">
-                  {formatInArgentina(item.published_at)}
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="text-[11px] text-slate-400 flex items-center gap-1">
-                  <Clock className="w-3 h-3 text-slate-400" />
-                  Publicación
-                </div>
-                <div className="font-medium text-slate-400">
-                  Pendiente
-                </div>
-              </>
-            )}
           </div>
         </div>
       </div>
+
+      {/* Desglose de Escenas Audiovisuales (Fase 7) */}
+      {scenes.length > 0 && (
+        <div className="bg-dark-900/90 border border-purple-500/30 rounded-3xl p-6 md:p-8 shadow-xl shadow-purple-950/10 space-y-6">
+          <div className="flex items-center justify-between border-b border-dark-800 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-400">
+                <Clapperboard className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  Guion y Desglose de Escenas
+                  <span className="text-xs font-normal px-2.5 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                    {scenes.length} Escenas Secuenciales
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Estructura técnica lista para grabación, edición y puesta en escena
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            {scenes.map((scene, idx) => (
+              <div
+                key={idx}
+                className="p-5 rounded-2xl bg-dark-950/70 border border-dark-800/80 hover:border-purple-500/40 transition-all space-y-3"
+              >
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-purple-500/15 border border-purple-500/30 text-purple-300 text-xs font-bold uppercase tracking-wider">
+                    <Video className="w-3.5 h-3.5" />
+                    Escena {scene.scene_number || idx + 1}
+                  </span>
+
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-dark-900 border border-dark-700 text-slate-300 text-xs font-mono">
+                    <Clock className="w-3 h-3 text-amber-400" />
+                    {scene.duration_seconds ? `${scene.duration_seconds} segundos` : 'Duración estimada'}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                  {/* Puesta en escena y Cámara */}
+                  <div className="space-y-2">
+                    <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                      <Compass className="w-3.5 h-3.5 text-sky-400" />
+                      Puesta en Escena y Cámara
+                    </div>
+                    <p className="text-xs text-slate-300 leading-relaxed bg-dark-900/60 p-3 rounded-xl border border-dark-800/60">
+                      {scene.visual_direction}
+                      {scene.camera_direction && (
+                        <span className="block mt-1.5 text-sky-300/90 font-medium">
+                          🎥 Cámara: {scene.camera_direction}
+                        </span>
+                      )}
+                    </p>
+                  </div>
+
+                  {/* Texto en Pantalla */}
+                  <div className="space-y-2">
+                    <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                      <Monitor className="w-3.5 h-3.5 text-emerald-400" />
+                      Texto en Pantalla (On-Screen Text)
+                    </div>
+                    <div className="p-3 rounded-xl bg-emerald-950/30 border border-emerald-800/40 text-xs font-semibold text-emerald-200 leading-relaxed">
+                      "{scene.on_screen_text}"
+                    </div>
+                  </div>
+                </div>
+
+                {/* Locución / Voiceover */}
+                {scene.voiceover && (
+                  <div className="space-y-1.5 pt-1">
+                    <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                      <Mic className="w-3.5 h-3.5 text-pink-400" />
+                      Locución / Diálogo (Voiceover)
+                    </div>
+                    <div className="p-3.5 rounded-xl bg-pink-950/20 border border-pink-800/30 text-xs text-pink-100 italic leading-relaxed">
+                      "{scene.voiceover}"
+                    </div>
+                  </div>
+                )}
+
+                {/* Transición */}
+                {scene.transition && (
+                  <div className="text-[11px] text-slate-400 flex items-center gap-1.5 pt-1">
+                    <MoveRight className="w-3.5 h-3.5 text-purple-400" />
+                    <span>Transición hacia siguiente escena: <strong className="text-slate-300">{scene.transition}</strong></span>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Structured Content Sections */}
       <div className="grid grid-cols-1 gap-5">
@@ -448,14 +454,14 @@ export function ContentDetailView({ contentId, onBack, onContentUpdated }: Conte
           </div>
         )}
 
-        {/* Script / Guion */}
+        {/* Script / Guion Completo */}
         {item.script && (
           <div className="bg-dark-900/90 border border-dark-800 rounded-2xl p-5 shadow-lg space-y-2">
             <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-aura-400">
               <FileText className="w-4 h-4" />
-              Script / Guion de Producción
+              Guion Completo de Locución
             </div>
-            <div className="p-4 rounded-xl bg-dark-950/80 border border-dark-800/80 text-sm text-slate-200 whitespace-pre-line leading-relaxed">
+            <div className="p-4 rounded-xl bg-dark-950/80 border border-dark-800/80 text-sm text-slate-200 whitespace-pre-line leading-relaxed font-sans">
               {item.script}
             </div>
           </div>
@@ -479,7 +485,7 @@ export function ContentDetailView({ contentId, onBack, onContentUpdated }: Conte
           </div>
         )}
 
-        {/* Hashtags Visual Badge List */}
+        {/* Hashtags */}
         {hashtagsList.length > 0 && (
           <div className="bg-dark-900/90 border border-dark-800 rounded-2xl p-5 shadow-lg space-y-3">
             <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-pink-400">
@@ -517,29 +523,31 @@ export function ContentDetailView({ contentId, onBack, onContentUpdated }: Conte
           <div className="bg-dark-900/90 border border-dark-800 rounded-2xl p-5 shadow-lg space-y-2">
             <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-indigo-400">
               <Compass className="w-4 h-4" />
-              Dirección Creativa
+              Dirección Creativa y Tono
             </div>
-            <div className="p-4 rounded-xl bg-dark-950/80 border border-dark-800/80 text-xs text-slate-300 whitespace-pre-line leading-relaxed">
+            <div className="p-4 rounded-xl bg-dark-950/80 border border-dark-800/80 text-xs text-slate-300 leading-relaxed">
               {item.creative_direction}
             </div>
           </div>
         )}
 
-        {/* Media Requirements as List */}
-        {mediaReqList.length > 0 && (
+        {/* Media Requirements */}
+        {mediaReqsList.length > 0 && (
           <div className="bg-dark-900/90 border border-dark-800 rounded-2xl p-5 shadow-lg space-y-3">
-            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-amber-400">
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-violet-400">
               <CheckSquare2 className="w-4 h-4" />
-              Requisitos de Medios y Producción
+              Requerimientos Multimedia y Planos Técnicos ({mediaReqsList.length})
             </div>
-            <div className="space-y-2">
-              {mediaReqList.map((req, idx) => (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {mediaReqsList.map((req, idx) => (
                 <div
                   key={idx}
-                  className="flex items-start gap-2.5 p-3 rounded-xl bg-dark-950/60 border border-dark-800/60 text-xs text-slate-300 leading-relaxed"
+                  className="flex items-start gap-2.5 p-3 rounded-xl bg-dark-950/60 border border-dark-800/60 text-xs text-slate-300"
                 >
-                  <span className="text-emerald-400 font-bold shrink-0 mt-0.5">✓</span>
-                  <span>{req}</span>
+                  <div className="w-4 h-4 rounded bg-violet-500/10 border border-violet-500/30 text-violet-400 flex items-center justify-center shrink-0 mt-0.5">
+                    ✓
+                  </div>
+                  <span className="leading-snug">{req}</span>
                 </div>
               ))}
             </div>
@@ -547,35 +555,20 @@ export function ContentDetailView({ contentId, onBack, onContentUpdated }: Conte
         )}
       </div>
 
-      {/* Footer Back Button */}
-      <div className="pt-4 border-t border-dark-800/80 flex items-center justify-between">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onBack}
-          leftIcon={<ArrowLeft className="w-4 h-4" />}
-        >
-          Volver a Contenidos
-        </Button>
-        <span className="text-xs text-slate-400">
-          Aura Social · Gobernanza de Contenido
-        </span>
-      </div>
-
-      {/* Modal de Confirmación de Rechazo */}
+      {/* Confirm Reject Dialog */}
       <ConfirmDialog
         isOpen={isRejectConfirmOpen}
         onClose={() => setIsRejectConfirmOpen(false)}
         onConfirm={handleConfirmReject}
-        title="¿Querés rechazar este contenido?"
-        message="El contenido pasará al estado Rechazado y no será considerado para publicación automática."
-        confirmText="Sí, rechazar contenido"
+        title="¿Rechazar contenido?"
+        message="El estado del contenido pasará a 'rechazado'. Podrás revisarlo nuevamente más tarde si es necesario."
+        confirmText="Rechazar contenido"
         cancelText="Cancelar"
         type="danger"
         isLoading={isActionLoading}
       />
 
-      {/* Modal de Programación (Hora Argentina) */}
+      {/* Schedule Modal (Strict Argentina Timezone) */}
       <ScheduleModal
         isOpen={isScheduleModalOpen}
         onClose={() => setIsScheduleModalOpen(false)}

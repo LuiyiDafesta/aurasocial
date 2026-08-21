@@ -17,7 +17,8 @@ import {
   Radio
 } from 'lucide-react';
 import { SocialAccount } from '../types/socialAccount';
-import { StatusCounts } from '../types/database';
+import { StatusCounts, Brand } from '../types/database';
+import { BrandSwitcher } from '../components/brands/BrandSwitcher';
 import { cn } from '../lib/utils';
 
 export type NavigationTab = 'dashboard' | 'ideas' | 'contenidos' | 'calendario' | 'analytics';
@@ -27,6 +28,12 @@ interface SidebarProps {
   onSelectTab: (tab: NavigationTab) => void;
   workspaceName?: string;
   brandName?: string;
+  brands?: Brand[];
+  currentBrand?: Brand | null;
+  onSelectBrand?: (brandId: string) => void;
+  onCreateBrand?: () => void;
+  onEditBrand?: (brand: Brand) => void;
+  isSwitchingBrand?: boolean;
   socialAccounts?: SocialAccount[];
   stats?: StatusCounts;
   isStatsLoading?: boolean;
@@ -38,6 +45,12 @@ export function Sidebar({
   onSelectTab,
   workspaceName,
   brandName,
+  brands = [],
+  currentBrand = null,
+  onSelectBrand,
+  onCreateBrand,
+  onEditBrand,
+  isSwitchingBrand = false,
   socialAccounts = [],
   stats = { all: 0, draft: 0, approved: 0, scheduled: 0, published: 0, rejected: 0 },
   isStatsLoading = false,
@@ -45,7 +58,7 @@ export function Sidebar({
 }: SidebarProps) {
   const displayName = brandName || workspaceName || 'Cargando...';
   
-  // Calcular iniciales dinámicas (ej. "TravelRockChannel" -> "TR")
+  // Calcular iniciales dinámicas
   const initials = displayName
     .split(' ')
     .map((word) => word[0])
@@ -83,29 +96,37 @@ export function Sidebar({
   return (
     <aside className="w-72 bg-dark-900 border-r border-dark-800/80 flex flex-col h-screen select-none shrink-0">
       {/* Brand & Workspace Header */}
-      <div className="p-5 border-b border-dark-800/80">
+      <div className="p-5 border-b border-dark-800/80 space-y-3">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 via-rose-500 to-indigo-600 p-[2px] shadow-lg shadow-rose-950/30">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 via-rose-500 to-indigo-600 p-[2px] shadow-lg shadow-rose-950/30 shrink-0">
             <div className="w-full h-full bg-dark-950 rounded-[10px] flex items-center justify-center font-black text-xs tracking-wider text-white">
               {initials}
             </div>
           </div>
           <div className="flex-1 min-w-0">
             <h2 className="text-sm font-bold text-white tracking-tight truncate">
-              {displayName}
+              {workspaceName || 'Aura Social'}
             </h2>
-            {workspaceName && brandName && workspaceName !== brandName ? (
-              <span className="text-[10px] text-slate-400 truncate block">
-                Workspace: {workspaceName}
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1 text-[11px] text-emerald-400">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                Workspace Conectado
-              </span>
-            )}
+            <span className="inline-flex items-center gap-1 text-[11px] text-emerald-400">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              Workspace Activo
+            </span>
           </div>
         </div>
+
+        {/* Global Brand Switcher */}
+        {brands.length > 0 && onSelectBrand && (
+          <div className="pt-1">
+            <BrandSwitcher
+              brands={brands}
+              currentBrand={currentBrand}
+              onSelectBrand={onSelectBrand}
+              onCreateNewBrand={onCreateBrand || (() => {})}
+              onEditBrandBrain={() => currentBrand && onEditBrand?.(currentBrand)}
+              isSwitching={isSwitchingBrand}
+            />
+          </div>
+        )}
       </div>
 
       {/* Quick Status Counters */}
@@ -279,7 +300,7 @@ export function Sidebar({
 
       {/* Footer */}
       <div className="p-4 border-t border-dark-800/80 text-[11px] text-slate-400 text-center">
-        Aura Social v1.0 · Fase 4.1
+        Aura Social v1.0 · Fase 7
       </div>
     </aside>
   );
