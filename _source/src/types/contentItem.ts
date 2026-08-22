@@ -45,6 +45,19 @@ export interface BrandContextSnapshot {
   key_rules?: string[];
 }
 
+export interface CampaignContextSnapshot {
+  campaign_id: string;
+  campaign_name: string;
+  strategic_objective?: string | null;
+  strategic_theme?: string | null;
+  target_audience?: string | null;
+  primary_channel?: string | null;
+  budget_context?: string | null;
+  kpis?: any[] | null;
+  start_date?: string | null;
+  end_date?: string | null;
+}
+
 export interface ProductionBrief {
   target_platform: string;
   target_format: string;
@@ -52,6 +65,7 @@ export interface ProductionBrief {
   objective_mode?: 'inherited' | 'custom';
   duration_preference?: string;
   custom_instructions?: string;
+  campaign_context?: CampaignContextSnapshot | null;
   inherited_idea_context?: InheritedIdeaContext;
   brand_context_snapshot?: BrandContextSnapshot;
   [key: string]: any;

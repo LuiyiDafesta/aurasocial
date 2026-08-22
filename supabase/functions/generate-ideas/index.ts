@@ -45,7 +45,7 @@ serve(async (req) => {
 
     // 2. Extraer y validar parámetros del body
     const body = await req.json();
-    const { workspace_id, brand_id, generation_context: rawContext } = body;
+    const { workspace_id, brand_id, campaign_id, generation_context: rawContext } = body;
 
     if (!workspace_id || !brand_id) {
       return new Response(
@@ -134,6 +134,29 @@ serve(async (req) => {
       );
     }
 
+    // 5.1 Validar campaign_id opcional (si se envió)
+    let validatedCampaignId: string | null = null;
+    let campaignData: Record<string, any> | null = null;
+
+    if (campaign_id) {
+      const { data: campaign, error: campErr } = await supabaseAdmin
+        .from("campaigns")
+        .select("id, name, strategic_objective, strategic_theme, target_audience, primary_channel, budget_context, kpis, start_date, end_date")
+        .eq("id", campaign_id)
+        .eq("brand_id", brand_id)
+        .eq("workspace_id", workspace_id)
+        .maybeSingle();
+
+      if (campErr || !campaign) {
+        return new Response(
+          JSON.stringify({ error: "La campaña indicada no pertenece a esta marca o workspace" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      validatedCampaignId = campaign.id;
+      campaignData = campaign;
+    }
+
     // 6. Prevenir ejecuciones duplicadas concurrentes (últimos 2 minutos)
     const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
     const { data: activeRuns } = await supabaseAdmin
@@ -157,10 +180,11 @@ serve(async (req) => {
       );
     }
 
-    // 7. Crear el registro generation_run en estado 'pending' con generation_context (con fallback defensivo)
+    // 7. Crear el registro generation_run en estado 'pending' con campaign_id y generation_context
     const insertPayload: Record<string, any> = {
       workspace_id,
       brand_id,
+      campaign_id: validatedCampaignId,
       user_id: user.id,
       workflow_name: "WF01",
       status: "pending",
@@ -195,12 +219,14 @@ serve(async (req) => {
       );
     }
 
-    // 8. Enviar POST al Webhook de n8n incluyendo el context
+    // 8. Enviar POST al Webhook de n8n incluyendo campaign_id y context
     try {
       const n8nPayload = {
         run_id: newRun.id,
         workspace_id,
         brand_id,
+        campaign_id: validatedCampaignId,
+        campaign: campaignData,
         user_id: user.id,
         generation_context: sanitizedContext,
       };

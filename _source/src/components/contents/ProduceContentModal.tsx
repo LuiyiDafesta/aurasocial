@@ -22,7 +22,8 @@ import {
 import { produceContentFromIdea } from '../../services/contentItemsService';
 import { ContentIdea } from '../../types/contentIdea';
 import { Brand } from '../../types/database';
-import { ProductionBrief } from '../../types/contentItem';
+import { ProductionBrief, CampaignContextSnapshot } from '../../types/contentItem';
+import { supabase } from '../../lib/supabase';
 import { cn } from '../../lib/utils';
 
 interface ProduceContentModalProps {
@@ -273,6 +274,7 @@ export const ProduceContentModal: React.FC<ProduceContentModalProps> = ({
   const [customObjectiveText, setCustomObjectiveText] = useState<string>('');
 
   // UI state
+  const [campaignInfo, setCampaignInfo] = useState<{ id: string; name: string } | null>(null);
   const [isIdeaExpanded, setIsIdeaExpanded] = useState<boolean>(false);
   const [productionState, setProductionState] = useState<'idle' | 'preparing' | 'generating' | 'done'>('idle');
   const [error, setError] = useState<string | null>(null);
@@ -280,6 +282,22 @@ export const ProduceContentModal: React.FC<ProduceContentModalProps> = ({
     content_item_id: string;
     is_new: boolean;
   } | null>(null);
+
+  // Cargar información de la campaña asociada a la idea (si tiene)
+  useEffect(() => {
+    if (idea?.campaign_id) {
+      supabase
+        .from('campaigns')
+        .select('id, name')
+        .eq('id', idea.campaign_id)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (data) setCampaignInfo(data);
+        });
+    } else {
+      setCampaignInfo(null);
+    }
+  }, [idea?.campaign_id]);
 
   // Inteligencia de recomendación según la idea
   const recommendation = useMemo(() => {
@@ -407,6 +425,35 @@ export const ProduceContentModal: React.FC<ProduceContentModalProps> = ({
     setError(null);
 
     try {
+      // Cargar snapshot de campaña si la idea pertenece a una campaña
+      let campaignContextSnapshot: CampaignContextSnapshot | null = null;
+      if (idea.campaign_id) {
+        try {
+          const { data: campData } = await supabase
+            .from('campaigns')
+            .select('id, name, strategic_objective, strategic_theme, target_audience, primary_channel, budget_context, kpis, start_date, end_date')
+            .eq('id', idea.campaign_id)
+            .maybeSingle();
+
+          if (campData) {
+            campaignContextSnapshot = {
+              campaign_id: campData.id,
+              campaign_name: campData.name,
+              strategic_objective: campData.strategic_objective,
+              strategic_theme: campData.strategic_theme,
+              target_audience: campData.target_audience,
+              primary_channel: campData.primary_channel,
+              budget_context: campData.budget_context,
+              kpis: campData.kpis,
+              start_date: campData.start_date,
+              end_date: campData.end_date,
+            };
+          }
+        } catch (campErr) {
+          console.warn('Advertencia al cargar snapshot de campaña para el brief:', campErr);
+        }
+      }
+
       // Construir snapshot de contexto inmutable
       const brief: ProductionBrief = {
         target_platform: platform,
@@ -415,6 +462,7 @@ export const ProduceContentModal: React.FC<ProduceContentModalProps> = ({
         objective_mode: selectedObjectivePreset === 'inherited' ? 'inherited' : 'custom',
         duration_preference: currentFormatObj.isVideo ? duration : 'no_video',
         custom_instructions: customInstructions.trim(),
+        campaign_context: campaignContextSnapshot,
         inherited_idea_context: {
           title: idea.title,
           concept: idea.concept,
@@ -504,6 +552,11 @@ export const ProduceContentModal: React.FC<ProduceContentModalProps> = ({
                   <Layers className="w-3 h-3" />
                   Idea Base
                 </span>
+                {campaignInfo && (
+                  <span className="text-[10px] font-medium px-2 py-0.5 rounded-lg bg-pink-500/15 text-pink-300 border border-pink-500/30">
+                    Campaña: <strong className="text-white">{campaignInfo.name}</strong>
+                  </span>
+                )}
                 {idea.pillar && (
                   <span className="text-[10px] font-medium px-2 py-0.5 rounded-lg bg-dark-900 text-slate-300 border border-dark-700">
                     Pilar: <strong className="text-white">{idea.pillar}</strong>

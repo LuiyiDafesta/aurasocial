@@ -13,12 +13,14 @@ interface TriggerGenerationResponse {
 export async function triggerIdeaGeneration(
   workspaceId: string,
   brandId: string,
-  context?: GenerationContext
+  context?: GenerationContext,
+  campaignId?: string | null
 ): Promise<TriggerGenerationResponse> {
   const { data, error } = await supabase.functions.invoke('generate-ideas', {
     body: {
       workspace_id: workspaceId,
       brand_id: brandId,
+      campaign_id: campaignId || null,
       generation_context: context || {
         topic: null,
         keywords: [],

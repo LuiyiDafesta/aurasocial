@@ -1,17 +1,18 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Campaign, CampaignStatus } from '../types/campaign';
 import { Brand } from '../types/database';
-import { GenerationRun } from '../types/generationRun';
+import { GenerationRun, GenerationContext } from '../types/generationRun';
 import { ContentIdea } from '../types/contentIdea';
 import { ContentItem } from '../types/contentItem';
 import { getCampaignSummaryCounts } from '../services/campaignService';
-import { getWorkspaceGenerationRuns } from '../services/generationService';
+import { getWorkspaceGenerationRuns, triggerIdeaGeneration } from '../services/generationService';
 import { getContentIdeas } from '../services/ideasService';
 import { getContentItems } from '../services/contentItemsService';
 import { Button } from '../components/common/Button';
 import { IdeaCard } from '../components/ideas/IdeaCard';
 import { GenerationCard } from '../components/ideas/GenerationCard';
 import { GenerationDetailModal } from '../components/ideas/GenerationDetailModal';
+import { GenerateIdeasModal } from '../components/ideas/GenerateIdeasModal';
 import { ProduceContentModal } from '../components/contents/ProduceContentModal';
 import { ContentCard } from '../components/content/ContentCard';
 import { ContentDetailView } from '../components/content/ContentDetailView';
@@ -19,6 +20,7 @@ import { CampaignFormModal } from '../components/campaigns/CampaignFormModal';
 import { AddIdeaToCampaignModal } from '../components/campaigns/AddIdeaToCampaignModal';
 import { AddContentToCampaignModal } from '../components/campaigns/AddContentToCampaignModal';
 import { AssetManagementStudio } from '../components/assets/AssetManagementStudio';
+import { useToast } from '../hooks/useToast';
 import { 
   ArrowLeft, 
   Target, 
@@ -81,14 +83,40 @@ export function CampaignWorkspace({
   const [isContentsLoading, setIsContentsLoading] = useState<boolean>(false);
   const [selectedContentId, setSelectedContentId] = useState<string | null>(null);
 
-  // Modales de asignación a campaña
+  // Modales de generación y asignación
+  const [isGenerateModalOpen, setIsGenerateModalOpen] = useState<boolean>(false);
+  const [isGeneratingIdeas, setIsGeneratingIdeas] = useState<boolean>(false);
   const [isAddIdeaModalOpen, setIsAddIdeaModalOpen] = useState<boolean>(false);
   const [isAddContentModalOpen, setIsAddContentModalOpen] = useState<boolean>(false);
+
+  const { toast } = useToast();
 
   // Sincronizar campaña inicial si cambia prop
   useEffect(() => {
     setCampaign(initialCampaign);
   }, [initialCampaign]);
+
+  const handleGenerateIdeas = async (context: GenerationContext) => {
+    try {
+      setIsGeneratingIdeas(true);
+      await triggerIdeaGeneration(campaign.workspace_id, currentBrand.id, context, campaign.id);
+      toast('Sesión iniciada', {
+        type: 'success',
+        description: 'La IA está generando ideas alineadas a esta campaña.',
+      });
+      setTimeout(() => {
+        loadSessions();
+        loadSummaryCounts();
+      }, 2000);
+    } catch (err: any) {
+      toast('Error de generación', {
+        type: 'error',
+        description: err.message || 'No se pudo iniciar la generación.',
+      });
+    } finally {
+      setIsGeneratingIdeas(false);
+    }
+  };
 
   // Cargar contadores actualizados
   const loadSummaryCounts = useCallback(async () => {
@@ -492,6 +520,22 @@ export function CampaignWorkspace({
       {/* SUBTAB 2: SESIONES */}
       {activeTab === 'sessions' && (
         <div className="space-y-4 animate-in fade-in duration-150">
+          <div className="flex items-center justify-between gap-4 flex-wrap pb-1">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+              Sesiones Creativas de la Campaña ({sessions.length})
+            </h3>
+
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setIsGenerateModalOpen(true)}
+              leftIcon={<Sparkles className="w-3.5 h-3.5" />}
+              className="text-xs bg-gradient-to-r from-aura-500 to-purple-600 hover:from-aura-600 hover:to-purple-700 text-white shadow-lg shadow-aura-950/30"
+            >
+              Nueva Sesión Creativa
+            </Button>
+          </div>
+
           {isSessionsLoading ? (
             <div className="py-16 text-center text-slate-400">
               <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-aura-400" />
@@ -509,14 +553,25 @@ export function CampaignWorkspace({
               ))}
             </div>
           ) : (
-            <div className="bg-dark-900/60 border border-dark-800 rounded-3xl p-12 text-center space-y-3">
+            <div className="bg-dark-900/60 border border-dark-800 rounded-3xl p-12 text-center space-y-4">
               <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 mx-auto">
                 <Zap className="w-6 h-6" />
               </div>
-              <h3 className="text-sm font-bold text-white">Esta campaña todavía no tiene sesiones creativas</h3>
-              <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
-                Las sesiones de generación con IA vinculadas a esta campaña agruparán automáticamente las ideas generadas.
-              </p>
+              <div className="space-y-1">
+                <h3 className="text-sm font-bold text-white">Esta campaña todavía no tiene sesiones creativas</h3>
+                <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
+                  Generá conceptos estratégicos con IA alineados directamente al objetivo y audiencia de {campaign.name}.
+                </p>
+              </div>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => setIsGenerateModalOpen(true)}
+                leftIcon={<Sparkles className="w-3.5 h-3.5" />}
+                className="text-xs bg-gradient-to-r from-aura-500 to-purple-600 hover:from-aura-600 hover:to-purple-700 text-white"
+              >
+                Iniciar Primera Sesión Creativa
+              </Button>
             </div>
           )}
         </div>
@@ -714,6 +769,16 @@ export function CampaignWorkspace({
           loadContents();
           loadSummaryCounts();
         }}
+      />
+
+      {/* Modal para generar nuevas ideas en la campaña */}
+      <GenerateIdeasModal
+        isOpen={isGenerateModalOpen}
+        onClose={() => setIsGenerateModalOpen(false)}
+        onGenerate={handleGenerateIdeas}
+        brandName={currentBrand.name}
+        campaignName={campaign.name}
+        isGenerating={isGeneratingIdeas}
       />
     </div>
   );

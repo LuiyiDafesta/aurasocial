@@ -20,6 +20,7 @@ interface GenerateIdeasModalProps {
   onClose: () => void;
   onGenerate: (context: GenerationContext) => void;
   brandName?: string;
+  campaignName?: string;
   isGenerating?: boolean;
 }
 
@@ -28,6 +29,7 @@ export function GenerateIdeasModal({
   onClose,
   onGenerate,
   brandName = 'la marca activa',
+  campaignName,
   isGenerating = false,
 }: GenerateIdeasModalProps) {
   const [topic, setTopic] = useState<string>('');
@@ -135,6 +137,9 @@ export function GenerateIdeasModal({
               </h3>
               <p className="text-xs text-slate-400">
                 Diseñando conceptos estratégicos para <strong className="text-white">{brandName}</strong>
+                {campaignName && (
+                  <> · Campaña: <strong className="text-pink-300">{campaignName}</strong></>
+                )}
               </p>
             </div>
           </div>
