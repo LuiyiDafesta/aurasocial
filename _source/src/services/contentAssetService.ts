@@ -6,8 +6,14 @@ import {
   UploadAssetParams, 
   AssetFilterParams 
 } from '../types/contentAsset';
+import { 
+  uploadToB2, 
+  getB2SignedUrl, 
+  deleteFromB2, 
+  B2_CONFIG 
+} from '../lib/b2Storage';
 
-export const STORAGE_BUCKET = 'aura-media';
+export const STORAGE_BUCKET = B2_CONFIG.bucketName || 'AuraSocial';
 export const MAX_FILE_SIZE_BYTES = 500 * 1024 * 1024; // 500 MB
 
 export const ALLOWED_MIME_TYPES = [
@@ -64,21 +70,18 @@ export function buildStoragePath(
 }
 
 /**
- * Genera una URL firmada temporal (1 hora TTL) para un archivo en el bucket aura-media.
+ * Genera una URL firmada temporal (1 hora TTL) para un archivo en Backblaze B2.
  */
 export async function getSignedAssetUrl(storagePath: string, expiresInSeconds = 3600): Promise<string> {
   if (!storagePath) return '';
 
-  const { data, error } = await supabase.storage
-    .from(STORAGE_BUCKET)
-    .createSignedUrl(storagePath, expiresInSeconds);
-
-  if (error) {
-    console.error(`Error al generar Signed URL para ${storagePath}:`, error);
+  try {
+    const signedUrl = await getB2SignedUrl(storagePath, expiresInSeconds);
+    return signedUrl;
+  } catch (error) {
+    console.error(`Error al generar Signed URL de Backblaze B2 para ${storagePath}:`, error);
     return '';
   }
-
-  return data.signedUrl || '';
 }
 
 /**
@@ -100,7 +103,7 @@ export async function enrichAssetsWithSignedUrls(assets: ContentAsset[]): Promis
 }
 
 /**
- * Sube un archivo a Supabase Storage y registra el asset en public.content_assets.
+ * Sube un archivo a Backblaze B2 S3 Storage y registra el asset en public.content_assets.
  */
 export async function uploadAsset({
   file,
@@ -149,17 +152,12 @@ export async function uploadAsset({
     contentItemId
   );
 
-  // 5. Subir a Storage
-  const { error: storageError } = await supabase.storage
-    .from(STORAGE_BUCKET)
-    .upload(storagePath, file, {
-      contentType: file.type,
-      upsert: false,
-    });
-
-  if (storageError) {
-    console.error('Error al subir archivo a Storage:', storageError);
-    throw new Error(`Error de Storage: ${storageError.message}`);
+  // 5. Subir a Backblaze B2
+  try {
+    await uploadToB2(file, storagePath, file.type);
+  } catch (storageError: any) {
+    console.error('Error al subir archivo a Backblaze B2:', storageError);
+    throw new Error(`Error de Almacenamiento Backblaze B2: ${storageError?.message || 'Fallo de subida'}`);
   }
 
   // 6. Obtener usuario autenticado
@@ -194,11 +192,15 @@ export async function uploadAsset({
     .select('*, campaigns:campaign_id ( id, name ), content_items:content_item_id ( id, title )')
     .single();
 
-  if (dbError) {
-    console.error('Error al registrar content_assets en DB. Limpiando Storage...', dbError);
-    // Cleanup archivo huérfano en Storage
-    await supabase.storage.from(STORAGE_BUCKET).remove([storagePath]);
-    throw new Error(`Error de Base de Datos: ${dbError.message}`);
+  if (dbError || !createdAsset) {
+    console.error('Error al registrar asset en base de datos. Limpiando Backblaze B2...', dbError);
+    // Cleanup archivo huérfano en Backblaze B2
+    try {
+      await deleteFromB2(storagePath);
+    } catch (cleanupError) {
+      console.warn('Error al limpiar archivo huérfano tras error DB:', cleanupError);
+    }
+    throw new Error(`Error al registrar asset en base de datos: ${dbError?.message || 'Error desconocido'}`);
   }
 
   // 8. Generar signed URL inicial
@@ -366,7 +368,7 @@ export async function getAssetById(assetId: string): Promise<ContentAsset | null
 }
 
 /**
- * Elimina un asset de Storage y de la base de datos de manera coordinada.
+ * Elimina un asset de Backblaze B2 y de la base de datos de manera coordinada.
  */
 export async function deleteAsset(assetId: string): Promise<void> {
   if (!assetId) throw new Error('assetId es requerido');
@@ -382,13 +384,11 @@ export async function deleteAsset(assetId: string): Promise<void> {
     throw new Error('No se encontró el asset a eliminar');
   }
 
-  // 2. Eliminar de Storage
-  const { error: storageError } = await supabase.storage
-    .from(asset.storage_bucket || STORAGE_BUCKET)
-    .remove([asset.storage_path]);
-
-  if (storageError) {
-    console.warn(`Aviso: Error al eliminar archivo de storage (${asset.storage_path}):`, storageError);
+  // 2. Eliminar de Backblaze B2
+  try {
+    await deleteFromB2(asset.storage_path);
+  } catch (storageError) {
+    console.warn(`Aviso: Error al eliminar archivo de Backblaze B2 (${asset.storage_path}):`, storageError);
   }
 
   // 3. Eliminar fila de content_assets
@@ -404,7 +404,7 @@ export async function deleteAsset(assetId: string): Promise<void> {
 }
 
 /**
- * Asocia lógicamente un asset existente a una pieza de contenido sin duplicar el archivo físico en Storage.
+ * Asocia lógicamente un asset existente a una pieza de contenido sin duplicar el archivo físico en Backblaze B2.
  */
 export async function linkExistingAssetToContent(
   sourceAsset: ContentAsset,
@@ -453,4 +453,3 @@ export async function linkExistingAssetToContent(
   const signedUrl = await getSignedAssetUrl(created.storage_path);
   return { ...created, signed_url: signedUrl } as ContentAsset;
 }
-
