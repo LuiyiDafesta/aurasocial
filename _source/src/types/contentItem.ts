@@ -26,6 +26,8 @@ export interface Scene {
   transition?: string;
 }
 
+export type ContentScene = Scene;
+
 export interface InheritedIdeaContext {
   title: string;
   concept: string;

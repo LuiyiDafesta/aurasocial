@@ -33,6 +33,7 @@ import { AssetPreviewModal } from '../assets/AssetPreviewModal';
 import { AssetDetailsModal } from '../assets/AssetDetailsModal';
 import { formatInArgentina } from '../../lib/dateUtils';
 import { Button } from '../common/Button';
+import { ContentProductionStudio } from '../studio/ContentProductionStudio';
 import { useToast } from '../../hooks/useToast';
 import { 
   ArrowLeft, 
@@ -102,6 +103,7 @@ export function ContentDetailView({ contentId, onBack, onContentUpdated }: Conte
   const [isRestoreConfirmOpen, setIsRestoreConfirmOpen] = useState<boolean>(false);
 
   // Modales de acciones editoriales
+  const [isStudioOpen, setIsStudioOpen] = useState<boolean>(false);
   const [isRejectConfirmOpen, setIsRejectConfirmOpen] = useState<boolean>(false);
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState<boolean>(false);
   const [isAssignCampaignModalOpen, setIsAssignCampaignModalOpen] = useState<boolean>(false);
@@ -374,6 +376,17 @@ export function ContentDetailView({ contentId, onBack, onContentUpdated }: Conte
   const scenes = Array.isArray(item.scenes) ? item.scenes : [];
   const currentVersionNumber = versions.length > 0 ? Math.max(...versions.map((v) => v.version_number)) : 1;
 
+  if (isStudioOpen && item) {
+    const activeVersion = versions.find((v) => v.version_number === currentVersionNumber) || null;
+    return (
+      <ContentProductionStudio
+        item={item}
+        currentVersion={activeVersion}
+        onBack={() => setIsStudioOpen(false)}
+      />
+    );
+  }
+
   return (
     <div className="p-6 md:p-8 max-w-6xl mx-auto space-y-6 animate-in fade-in duration-200 pb-16">
       
@@ -488,6 +501,16 @@ export function ContentDetailView({ contentId, onBack, onContentUpdated }: Conte
                   className="hover:border-aura-500/50 hover:bg-aura-500/10 text-white font-semibold"
                 >
                   Editar Contenido
+                </Button>
+
+                <Button
+                  variant="primary"
+                  size="md"
+                  onClick={() => setIsStudioOpen(true)}
+                  leftIcon={<Clapperboard className="w-4 h-4" />}
+                  className="bg-gradient-to-r from-aura-600 to-purple-600 hover:from-aura-500 hover:to-purple-500 text-white font-semibold shadow-lg shadow-aura-950/40"
+                >
+                  Estudio de Producción
                 </Button>
 
                 <Button
