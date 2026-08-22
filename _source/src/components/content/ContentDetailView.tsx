@@ -18,6 +18,9 @@ import {
   deleteAsset, 
   linkExistingAssetToContent 
 } from '../../services/contentAssetService';
+import { SceneMediaBuilder } from './SceneMediaBuilder';
+import { PlatformAdaptationsSection } from './PlatformAdaptationsSection';
+import { SocialConnectionsPanel } from '../publishing/SocialConnectionsPanel';
 import { PlatformBadge } from './PlatformBadge';
 import { StatusBadge } from './StatusBadge';
 import { ScheduleModal } from './ScheduleModal';
@@ -940,6 +943,32 @@ export function ContentDetailView({ contentId, onBack, onContentUpdated }: Conte
             ))}
           </div>
         </div>
+      )}
+
+      {/* SECCIÓN: MEDIA PLAN & SCENE BUILDER (FASE 9B.1 / 9B.2 / 9B.3) */}
+      {!isEditing && scenes.length > 0 && (
+        <SceneMediaBuilder
+          contentItem={item}
+          contentAssets={contentAssets}
+          onScenesUpdated={(updatedScenes) => {
+            setItem((prev) => prev ? { ...prev, scenes: updatedScenes } : null);
+          }}
+          onRefreshAssets={fetchAssets}
+        />
+      )}
+
+      {/* SECCIÓN: ADAPTACIONES POR PLATAFORMA (FASE 9C) */}
+      {!isEditing && (
+        <PlatformAdaptationsSection contentItem={item} />
+      )}
+
+      {/* SECCIÓN: CANALES SOCIALES CONECTADOS (FASE 9E) */}
+      {!isEditing && item.brand_id && item.workspace_id && (
+        <SocialConnectionsPanel
+          brandId={item.brand_id}
+          workspaceId={item.workspace_id}
+          brandName={item.brands?.name}
+        />
       )}
 
       {/* Structured Content Sections */}

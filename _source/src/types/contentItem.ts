@@ -16,6 +16,8 @@ export interface ContentIdeaInfo {
   pillar?: string | null;
 }
 
+import { MediaSlot } from './mediaSlot';
+
 export interface Scene {
   scene_number: number;
   duration_seconds: number;
@@ -24,6 +26,7 @@ export interface Scene {
   on_screen_text: string;
   voiceover: string;
   transition?: string;
+  media_slots?: MediaSlot[];
 }
 
 export type ContentScene = Scene;

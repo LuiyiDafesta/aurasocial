@@ -1,10 +1,14 @@
+import { SafeAreaConfig } from '../config/platformProfiles';
+
 export type TargetPlatform =
   | 'instagram'
   | 'tiktok'
   | 'facebook'
   | 'linkedin'
+  | 'youtube_shorts'
   | 'youtube'
   | 'x'
+  | 'pinterest'
   | 'other';
 
 export type TargetFormat =
@@ -77,6 +81,12 @@ export interface SceneMediaPlan {
   on_screen_text?: string;
   voiceover?: string;
   transition?: string;
+  layout?: string;
+  text_position?: 'top' | 'middle' | 'bottom';
+  text_alignment?: 'left' | 'center' | 'right';
+  font_scale?: number;
+  crop?: { mode: 'cover' | 'contain' | 'center' | 'top' | 'bottom' };
+  fit_mode?: 'cover' | 'contain' | 'stretch';
   source: AssetResolutionSource;
   asset_id?: string | null;
   asset_name?: string | null;
@@ -117,6 +127,7 @@ export interface RenderInputAsset {
   asset_name?: string | null;
   source: string;
   storage_path?: string | null;
+  fit_mode?: string;
 }
 
 export interface RenderOutput {
@@ -187,11 +198,16 @@ export interface PlatformAdaptation {
   content_version_id?: string | null;
   platform: TargetPlatform;
   format: TargetFormat;
-  dimensions: PlatformDimensions;
-  target_duration_seconds?: number | null;
+  title?: string | null;
+  hook?: string | null;
   caption?: string | null;
   hashtags?: string[];
   cta?: string | null;
+  dimensions: PlatformDimensions;
+  target_duration_seconds?: number | null;
+  safe_area?: SafeAreaConfig;
+  platform_rules?: Record<string, any>;
+  thumbnail_strategy?: { mode: 'first_frame' | 'custom' | 'ai_generated'; time_offset_seconds?: number };
   scene_mappings: SceneMediaPlan[];
   render_status: RenderStatus;
   render_output: RenderOutput;
@@ -204,4 +220,65 @@ export interface PlatformAdaptation {
   publication_package: PublicationPackage | Record<string, any>;
   created_at: string;
   updated_at: string;
+}
+
+export interface PlatformReadinessSummary {
+  isReady: boolean;
+  status: 'ready_for_render' | 'requires_correction' | 'blocked';
+  mediaReady: boolean;
+  textReady: boolean;
+  formatReady: boolean;
+  resolvedMediaCount: number;
+  totalMediaCount: number;
+  errors: ValidationError[];
+  warnings: ValidationWarning[];
+}
+
+export interface RenderPackage {
+  platform: TargetPlatform;
+  format: TargetFormat;
+  resolution: { width: number; height: number };
+  aspect_ratio: string;
+  duration_seconds: number;
+  scenes: Array<{
+    scene_number: number;
+    duration_seconds: number;
+    visual_direction?: string;
+    transition?: string;
+    layout?: string;
+    fit_mode?: string;
+    crop?: { mode: string };
+    asset?: {
+      asset_id: string;
+      storage_path?: string;
+      mime_type?: string;
+      asset_name?: string;
+    } | null;
+    text_overlay?: {
+      text: string;
+      position: string;
+      alignment: string;
+      safe_area_valid: boolean;
+    } | null;
+    voiceover?: string | null;
+  }>;
+  media_assets: Array<{
+    scene_number: number;
+    asset_id: string;
+    storage_path?: string;
+    mime_type?: string;
+  }>;
+  text_layers: Array<{
+    scene_number: number;
+    text: string;
+    position: string;
+    alignment: string;
+  }>;
+  audio_layers: Array<{
+    scene_number: number;
+    voiceover?: string;
+    audio_asset_id?: string;
+  }>;
+  safe_area: SafeAreaConfig;
+  thumbnail_strategy: { mode: string; time_offset_seconds?: number };
 }
