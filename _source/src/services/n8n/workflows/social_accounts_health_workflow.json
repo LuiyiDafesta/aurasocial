@@ -20,7 +20,7 @@
     },
     {
       "parameters": {
-        "url": "={{$env.AURASOCIAL_API_URL || 'https://api.aurasocial.app'}}/api/social/providers/health",
+        "url": "={{$env.AURASOCIAL_API_URL || 'https://aurasocial.lsnethub.com'}}/api/social/providers/health",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendHeaders": true,
@@ -46,7 +46,7 @@
     },
     {
       "parameters": {
-        "url": "={{$env.AURASOCIAL_API_URL || 'https://api.aurasocial.app'}}/api/social/accounts",
+        "url": "={{$env.AURASOCIAL_API_URL || 'https://aurasocial.lsnethub.com'}}/api/social/accounts",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendHeaders": true,

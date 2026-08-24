@@ -21,7 +21,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{$env.AURASOCIAL_API_URL || 'https://api.aurasocial.app'}}/api/social/accounts/sync",
+        "url": "={{$env.AURASOCIAL_API_URL || 'https://aurasocial.lsnethub.com'}}/api/social/accounts/sync",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [

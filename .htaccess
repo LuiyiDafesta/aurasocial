@@ -6,6 +6,13 @@
   RewriteEngine On
   RewriteBase /
 
+  # Pasar header Authorization a PHP en Apache/Ferozo
+  SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1
+  RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+  # Enrutar peticiones /api/... al gateway PHP
+  RewriteRule ^api/(.*)$ api/index.php [QSA,L]
+
   # Si el archivo o directorio solicitado existe físicamente, servirlo directamente
   RewriteCond %{REQUEST_FILENAME} -f [OR]
   RewriteCond %{REQUEST_FILENAME} -d

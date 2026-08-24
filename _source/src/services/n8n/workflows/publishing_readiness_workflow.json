@@ -20,7 +20,7 @@
     },
     {
       "parameters": {
-        "url": "={{$env.AURASOCIAL_API_URL || 'https://api.aurasocial.app'}}/api/publishing/readiness/{{$json.content_id}}?platform={{$json.platform}}",
+        "url": "={{$env.AURASOCIAL_API_URL || 'https://aurasocial.lsnethub.com'}}/api/publishing/readiness/{{$json.content_id}}?platform={{$json.platform}}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
