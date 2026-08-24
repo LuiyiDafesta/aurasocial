@@ -12,19 +12,26 @@ import {
   ThumbsUp, 
   Globe,
   Film,
-  Sparkles
+  Sparkles,
+  MoveVertical
 } from 'lucide-react';
 
 interface UnifiedSocialPreviewProps {
   publicationPackage: PublicationPackage;
   activeAdaptation?: PlatformAdaptation;
   currentSceneNumber?: number;
+  onUpdateSceneTextPosition?: (
+    sceneNumber: number,
+    position: 'top' | 'middle' | 'bottom',
+    alignment?: 'left' | 'center' | 'right'
+  ) => void;
 }
 
 export function UnifiedSocialPreview({
   publicationPackage: pkg,
   activeAdaptation,
   currentSceneNumber = 1,
+  onUpdateSceneTextPosition,
 }: UnifiedSocialPreviewProps) {
   const [showSafeArea, setShowSafeArea] = useState<boolean>(false);
   const [isExpandedCaption, setIsExpandedCaption] = useState<boolean>(false);
@@ -61,7 +68,38 @@ export function UnifiedSocialPreview({
   const currentOverlay = (pkg.text_overlays || []).find((t) => t.scene_number === currentSceneNumber) ||
     (currentScene?.on_screen_text ? { text: currentScene.on_screen_text, safe_area_valid: true } : (pkg.text_overlays || [])[0]);
 
+  // 4. Ubicación y Alineación Dinámica del Overlay de Texto
+  const textPosition = currentScene?.text_position || (currentOverlay as any)?.position || 'middle';
+  const textAlignment = currentScene?.text_alignment || (currentOverlay as any)?.alignment || 'center';
+
+  const verticalPosClass = 
+    textPosition === 'top' 
+      ? 'mt-8 mb-auto' 
+      : textPosition === 'bottom' 
+      ? 'mt-auto mb-10' 
+      : 'my-auto';
+
+  const textAlignClass = 
+    textAlignment === 'left' 
+      ? 'text-left' 
+      : textAlignment === 'right' 
+      ? 'text-right' 
+      : 'text-center';
+
+  const feedVerticalPosClass = 
+    textPosition === 'top' 
+      ? 'top-4' 
+      : textPosition === 'bottom' 
+      ? 'bottom-6' 
+      : 'top-1/2 -translate-y-1/2';
+
   const isVertical = pkg.media?.aspect_ratio === '9:16' || format === 'reel' || platform === 'tiktok' || format === 'short';
+
+  const handleCyclePosition = () => {
+    if (!onUpdateSceneTextPosition || !currentScene) return;
+    const nextPos = textPosition === 'top' ? 'bottom' : textPosition === 'bottom' ? 'middle' : 'top';
+    onUpdateSceneTextPosition(currentScene.scene_number, nextPos, textAlignment);
+  };
 
   return (
     <div className="flex flex-col h-full bg-dark-950 border border-dark-800 rounded-3xl p-5 shadow-2xl space-y-4">
@@ -151,12 +189,17 @@ export function UnifiedSocialPreview({
               <MoreHorizontal className="w-4 h-4" />
             </div>
 
-            {/* Center Deterministic Text Overlay */}
+            {/* Dynamic Deterministic Text Overlay (Positionable) */}
             {currentOverlay && currentOverlay.text && (
-              <div className="relative z-20 my-auto text-center px-4">
-                <span className="inline-block px-3 py-1.5 rounded-xl bg-black/80 backdrop-blur-md text-white font-extrabold text-xs sm:text-sm leading-tight tracking-tight shadow-xl border border-white/15">
-                  {currentOverlay.text}
-                </span>
+              <div className={`relative z-20 px-3 ${verticalPosClass} ${textAlignClass} transition-all duration-200`}>
+                <div 
+                  onClick={handleCyclePosition}
+                  title="Clic para cambiar posición del texto (Arriba / Centro / Abajo)"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-black/80 backdrop-blur-md text-white font-extrabold text-xs sm:text-sm leading-tight tracking-tight shadow-xl border border-white/15 cursor-pointer hover:bg-black/90 hover:scale-[1.02] active:scale-95 transition-all group"
+                >
+                  <span>{currentOverlay.text}</span>
+                  <MoveVertical className="w-3 h-3 text-aura-400 opacity-40 group-hover:opacity-100 transition-opacity" />
+                </div>
               </div>
             )}
 
@@ -272,10 +315,15 @@ export function UnifiedSocialPreview({
                 <img key={mediaUrl} src={mediaUrl} alt="Post media" className="w-full h-full object-cover" />
               )}
               {currentOverlay && currentOverlay.text && (
-                <div className="absolute inset-x-4 bottom-6 text-center z-10">
-                  <span className="inline-block px-3 py-1.5 rounded-xl bg-black/80 backdrop-blur-md text-white font-bold text-xs shadow-lg border border-white/10">
-                    {currentOverlay.text}
-                  </span>
+                <div className={`absolute inset-x-4 ${feedVerticalPosClass} ${textAlignClass} z-10 transition-all`}>
+                  <div 
+                    onClick={handleCyclePosition}
+                    title="Clic para cambiar posición del texto"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-black/80 backdrop-blur-md text-white font-bold text-xs shadow-lg border border-white/10 cursor-pointer hover:bg-black/90 transition-all group"
+                  >
+                    <span>{currentOverlay.text}</span>
+                    <MoveVertical className="w-3 h-3 text-aura-400 opacity-40 group-hover:opacity-100 transition-opacity" />
+                  </div>
                 </div>
               )}
             </div>

@@ -555,7 +555,15 @@ export async function approvePlatformAdaptation(
   }
 
   const approvedAt = new Date().toISOString();
-  const approvedBy = userId || '00000000-0000-0000-0000-000000000000';
+  let approvedBy: string | null = userId || null;
+  if (!approvedBy) {
+    try {
+      const { data: authData } = await supabase.auth.getUser();
+      approvedBy = authData?.user?.id || null;
+    } catch {
+      approvedBy = null;
+    }
+  }
 
   const updatedPackage = typeof adaptation.publication_package === 'object' && adaptation.publication_package !== null
     ? {
@@ -943,3 +951,64 @@ export function buildRenderPackage(adaptation: PlatformAdaptation): RenderPackag
     thumbnail_strategy: adaptation.thumbnail_strategy || { mode: 'first_frame' },
   };
 }
+
+/**
+ * Sincroniza y propaga la configuración de escenas (assets, overlays, posiciones) de una adaptación
+ * hacia todas las demás plataformas del contenido (Instagram, TikTok, Facebook, LinkedIn, YouTube).
+ */
+export async function syncScenesToAllAdaptations(
+  contentItemId: string,
+  sourceScenes: SceneMediaPlan[],
+  brandName: string,
+  contentVersionId?: string | null
+): Promise<PlatformAdaptation[]> {
+  if (!contentItemId) return [];
+
+  const adaptations = await getPlatformAdaptations(contentItemId, contentVersionId);
+  const updatedList: PlatformAdaptation[] = [];
+
+  for (const adaptation of adaptations) {
+    const updatedScenes = (adaptation.scene_mappings || []).map((targetScene) => {
+      const source = sourceScenes.find((s) => s.scene_number === targetScene.scene_number);
+      if (!source) return targetScene;
+
+      return {
+        ...targetScene,
+        source: source.source,
+        asset_id: source.asset_id,
+        asset_name: source.asset_name,
+        storage_path: source.storage_path,
+        mime_type: source.mime_type,
+        asset_url: source.asset_url,
+        status: source.status,
+        on_screen_text: source.on_screen_text !== undefined ? source.on_screen_text : targetScene.on_screen_text,
+        text_position: source.text_position || targetScene.text_position || 'middle',
+        text_alignment: source.text_alignment || targetScene.text_alignment || 'center',
+      };
+    });
+
+    const { renderOutput, publicationPackage, validation } = await composeAndRenderAdaptation({
+      adaptation: { ...adaptation, scene_mappings: updatedScenes },
+      scenes: updatedScenes,
+      brandName,
+      campaignId: adaptation.campaign_id,
+    });
+
+    const saved = await savePlatformAdaptation({
+      ...adaptation,
+      scene_mappings: updatedScenes,
+      render_status: 'rendered',
+      render_output: renderOutput,
+      validation_status: validation.isValid ? 'valid' : 'blocked',
+      validation_errors: validation.errors,
+      validation_warnings: validation.warnings,
+      readiness_status: publicationPackage.readiness_status,
+      publication_package: publicationPackage,
+    });
+
+    updatedList.push(saved);
+  }
+
+  return updatedList;
+}
+

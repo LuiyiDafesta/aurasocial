@@ -11,7 +11,14 @@ import {
   Type, 
   ShieldCheck, 
   ShieldAlert,
-  FolderOpen
+  FolderOpen,
+  ArrowUp,
+  Circle,
+  ArrowDown,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  Share2
 } from 'lucide-react';
 
 interface SceneMediaPlannerPanelProps {
@@ -20,7 +27,13 @@ interface SceneMediaPlannerPanelProps {
   onSelectActiveScene?: (sceneNumber: number) => void;
   onSelectSceneForAsset: (sceneNumber: number) => void;
   onUpdateSceneText: (sceneNumber: number, text: string) => void;
+  onUpdateSceneTextPosition?: (
+    sceneNumber: number, 
+    position: 'top' | 'middle' | 'bottom', 
+    alignment?: 'left' | 'center' | 'right'
+  ) => void;
   onUsePlaceholder: (sceneNumber: number) => void;
+  onSyncToAllPlatforms?: () => void;
   isReadOnly?: boolean;
 }
 
@@ -30,7 +43,9 @@ export function SceneMediaPlannerPanel({
   onSelectActiveScene,
   onSelectSceneForAsset,
   onUpdateSceneText,
+  onUpdateSceneTextPosition,
   onUsePlaceholder,
+  onSyncToAllPlatforms,
   isReadOnly = false,
 }: SceneMediaPlannerPanelProps) {
   const [internalSceneIndex, setInternalSceneIndex] = useState<number>(0);
@@ -81,6 +96,8 @@ export function SceneMediaPlannerPanel({
   };
 
   const currentScene = scenes[activeSceneIndex] || scenes[0];
+  const currentPosition = currentScene?.text_position || 'middle';
+  const currentAlignment = currentScene?.text_alignment || 'center';
 
   return (
     <div className="flex flex-col h-full bg-dark-900/90 border border-dark-800 rounded-3xl p-5 shadow-xl space-y-4">
@@ -101,52 +118,67 @@ export function SceneMediaPlannerPanel({
       </div>
 
       {/* Scene Pills List */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
-        {scenes.map((scene, idx) => {
-          const isSelected = idx === activeSceneIndex;
-          const isResolved = scene.status === 'resolved';
+      <div className="flex items-center justify-between gap-2 overflow-x-auto pb-1 scrollbar-thin">
+        <div className="flex items-center gap-2">
+          {scenes.map((scene, idx) => {
+            const isSelected = idx === activeSceneIndex;
+            const isResolved = scene.status === 'resolved';
 
-          return (
-            <button
-              key={scene.scene_number}
-              onClick={() => {
-                setInternalSceneIndex(idx);
-                if (onSelectActiveScene) {
-                  onSelectActiveScene(scene.scene_number);
-                }
-              }}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
-                isSelected
-                  ? 'bg-aura-600 text-white shadow-md shadow-aura-950/40'
-                  : 'bg-dark-950/80 border border-dark-800/80 text-slate-300 hover:bg-dark-800'
-              }`}
-            >
-              <span>E{scene.scene_number}</span>
-              <span className={`w-1.5 h-1.5 rounded-full ${isResolved ? 'bg-emerald-400' : 'bg-rose-400 animate-pulse'}`} />
-            </button>
-          );
-        })}
+            return (
+              <button
+                key={scene.scene_number}
+                onClick={() => {
+                  setInternalSceneIndex(idx);
+                  if (onSelectActiveScene) {
+                    onSelectActiveScene(scene.scene_number);
+                  }
+                }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
+                  isSelected
+                    ? 'bg-aura-600 text-white shadow-md shadow-aura-950/40'
+                    : 'bg-dark-950/80 border border-dark-800/80 text-slate-300 hover:bg-dark-800'
+                }`}
+              >
+                <span>E{scene.scene_number}</span>
+                <span className={`w-1.5 h-1.5 rounded-full ${isResolved ? 'bg-emerald-400' : 'bg-rose-400 animate-pulse'}`} />
+              </button>
+            );
+          })}
+        </div>
+
+        {onSyncToAllPlatforms && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onSyncToAllPlatforms}
+            className="text-[10px] h-7 px-2 text-aura-400 hover:text-aura-300 hover:bg-aura-950/30 border border-aura-500/20 shrink-0"
+            title="Copiar los videos y textos de estas escenas a todas las plataformas"
+          >
+            <Share2 className="w-3 h-3 mr-1" />
+            Copiar a todas
+          </Button>
+        )}
       </div>
 
       {/* Selected Scene Detail Card */}
       {currentScene && (
         <div className="flex-1 space-y-4 overflow-y-auto pr-1">
-          {/* Card Title & Badges */}
-          <div className="p-3.5 rounded-2xl bg-dark-950/70 border border-dark-800 space-y-2.5">
-            <div className="flex items-center justify-between flex-wrap gap-2">
+          {/* Main Scene Slot Header */}
+          <div className="p-3.5 bg-dark-950/80 border border-dark-800 rounded-2xl space-y-2.5">
+            <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-white flex items-center gap-1.5">
                 Escena #{currentScene.scene_number}
-                <span className="text-[11px] text-slate-400 font-normal font-mono">
+                <span className="text-[11px] text-slate-400 font-normal">
                   ({currentScene.duration_seconds}s)
                 </span>
               </span>
               {getSourceBadge(currentScene.source, currentScene.status)}
             </div>
 
-            {/* Asset Status & Action */}
-            <div className="flex items-center justify-between gap-3 p-2.5 rounded-xl bg-dark-900 border border-dark-800/80 text-xs">
-              <div className="flex items-center gap-2 min-w-0">
-                {currentScene.asset_type === 'video' ? (
+            {/* Asset assignment bar */}
+            <div className="flex items-center justify-between gap-2 p-2 bg-dark-900/90 rounded-xl border border-dark-800/80 text-xs">
+              <div className="flex items-center gap-2 truncate">
+                {currentScene.mime_type?.startsWith('video') || currentScene.asset_type === 'video' ? (
                   <Film className="w-4 h-4 text-pink-400 shrink-0" />
                 ) : (
                   <ImageIcon className="w-4 h-4 text-sky-400 shrink-0" />
@@ -220,7 +252,7 @@ export function SceneMediaPlannerPanel({
             )}
 
             {/* Deterministic On-Screen Text Overlay */}
-            <div className="space-y-1.5 pt-1">
+            <div className="space-y-2 pt-1">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] uppercase font-semibold text-aura-300 tracking-wider flex items-center gap-1">
                   <Type className="w-3 h-3" />
@@ -245,6 +277,93 @@ export function SceneMediaPlannerPanel({
                 placeholder="Texto a sobreimprimir en el video..."
                 className="w-full bg-dark-950 border border-dark-800 rounded-xl p-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-aura-500 font-sans resize-none"
               />
+
+              {/* Posición y Alineación del Overlay de Texto */}
+              <div className="p-2.5 rounded-xl bg-dark-950/60 border border-dark-800/80 space-y-2">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-slate-400 font-medium">Ubicación Vertical:</span>
+                  <div className="flex items-center gap-1 bg-dark-900 p-0.5 rounded-lg border border-dark-800">
+                    <button
+                      type="button"
+                      onClick={() => onUpdateSceneTextPosition?.(currentScene.scene_number, 'top', currentAlignment)}
+                      className={`px-2 py-1 rounded-md text-[10px] font-semibold flex items-center gap-1 transition-all ${
+                        currentPosition === 'top'
+                          ? 'bg-aura-600 text-white shadow-sm'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                      title="Posicionar arriba (zona superior segura)"
+                    >
+                      <ArrowUp className="w-3 h-3" /> Arriba
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onUpdateSceneTextPosition?.(currentScene.scene_number, 'middle', currentAlignment)}
+                      className={`px-2 py-1 rounded-md text-[10px] font-semibold flex items-center gap-1 transition-all ${
+                        currentPosition === 'middle'
+                          ? 'bg-aura-600 text-white shadow-sm'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                      title="Posicionar en el centro"
+                    >
+                      <Circle className="w-2.5 h-2.5" /> Centro
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onUpdateSceneTextPosition?.(currentScene.scene_number, 'bottom', currentAlignment)}
+                      className={`px-2 py-1 rounded-md text-[10px] font-semibold flex items-center gap-1 transition-all ${
+                        currentPosition === 'bottom'
+                          ? 'bg-aura-600 text-white shadow-sm'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                      title="Posicionar abajo (zona inferior segura)"
+                    >
+                      <ArrowDown className="w-3 h-3" /> Abajo
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between text-[11px] pt-1 border-t border-dark-800/50">
+                  <span className="text-slate-400 font-medium">Alineación:</span>
+                  <div className="flex items-center gap-1 bg-dark-900 p-0.5 rounded-lg border border-dark-800">
+                    <button
+                      type="button"
+                      onClick={() => onUpdateSceneTextPosition?.(currentScene.scene_number, currentPosition, 'left')}
+                      className={`p-1 rounded-md transition-all ${
+                        currentAlignment === 'left'
+                          ? 'bg-aura-600 text-white shadow-sm'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                      title="Alinear a la izquierda"
+                    >
+                      <AlignLeft className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onUpdateSceneTextPosition?.(currentScene.scene_number, currentPosition, 'center')}
+                      className={`p-1 rounded-md transition-all ${
+                        currentAlignment === 'center'
+                          ? 'bg-aura-600 text-white shadow-sm'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                      title="Centrar texto"
+                    >
+                      <AlignCenter className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onUpdateSceneTextPosition?.(currentScene.scene_number, currentPosition, 'right')}
+                      className={`p-1 rounded-md transition-all ${
+                        currentAlignment === 'right'
+                          ? 'bg-aura-600 text-white shadow-sm'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                      title="Alinear a la derecha"
+                    >
+                      <AlignRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
 
               {currentScene.safe_area_warning && (
                 <p className="text-[11px] text-amber-300 leading-snug">

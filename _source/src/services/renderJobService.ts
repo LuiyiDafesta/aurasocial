@@ -280,7 +280,15 @@ export async function approveRender(
   }
 
   const approvedAt = new Date().toISOString();
-  const approvedBy = userId || '00000000-0000-0000-0000-000000000000';
+  let approvedBy: string | null = userId || null;
+  if (!approvedBy) {
+    try {
+      const { data: authData } = await supabase.auth.getUser();
+      approvedBy = authData?.user?.id || null;
+    } catch {
+      approvedBy = null;
+    }
+  }
 
   const { data, error } = await supabase
     .from('platform_adaptations')

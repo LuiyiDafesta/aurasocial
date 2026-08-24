@@ -13,6 +13,7 @@ import {
   updateAdaptationSceneAsset,
   savePlatformAdaptation,
   approvePlatformAdaptation,
+  syncScenesToAllAdaptations,
 } from '../../services/platformAdaptationService';
 import { composeAndRenderAdaptation } from '../../services/renderService';
 import { SceneMediaPlannerPanel } from './SceneMediaPlannerPanel';
@@ -25,7 +26,8 @@ import {
   Clapperboard, 
   ArrowLeft, 
   RefreshCw, 
-  Loader2 
+  Loader2,
+  Share2
 } from 'lucide-react';
 
 interface ContentProductionStudioProps {
@@ -68,7 +70,7 @@ export function ContentProductionStudio({
     } finally {
       setIsLoading(false);
     }
-  }, [item, currentVersion]);
+  }, [item, currentVersion, toast]);
 
   useEffect(() => {
     loadOrCreateAdaptations();
@@ -110,6 +112,74 @@ export function ContentProductionStudio({
     );
   };
 
+  const handleUpdateSceneTextPosition = async (
+    sceneNumber: number,
+    position: 'top' | 'middle' | 'bottom',
+    alignment: 'left' | 'center' | 'right' = 'center'
+  ) => {
+    if (!activeAdaptation) return;
+
+    const updatedScenes = activeAdaptation.scene_mappings.map((s) => {
+      if (s.scene_number === sceneNumber) {
+        return {
+          ...s,
+          text_position: position,
+          text_alignment: alignment,
+        };
+      }
+      return s;
+    });
+
+    const { renderOutput, publicationPackage, validation } = await composeAndRenderAdaptation({
+      adaptation: { ...activeAdaptation, scene_mappings: updatedScenes },
+      scenes: updatedScenes,
+      brandName: item.brands?.name || 'Aura Social',
+      campaignId: item.campaign_id,
+    });
+
+    const updated = await savePlatformAdaptation({
+      ...activeAdaptation,
+      scene_mappings: updatedScenes,
+      render_output: renderOutput,
+      validation_status: validation.isValid ? 'valid' : 'blocked',
+      validation_errors: validation.errors,
+      validation_warnings: validation.warnings,
+      readiness_status: publicationPackage.readiness_status,
+      publication_package: publicationPackage,
+    });
+
+    setAdaptations((prev) =>
+      prev.map((a) => (a.id === updated.id ? updated : a))
+    );
+  };
+
+  const handleSyncToAllPlatforms = async () => {
+    if (!activeAdaptation) return;
+
+    try {
+      setIsLoading(true);
+      const synced = await syncScenesToAllAdaptations(
+        item.id,
+        activeAdaptation.scene_mappings,
+        item.brands?.name || 'Aura Social',
+        currentVersion?.id
+      );
+
+      setAdaptations(synced);
+      toast('Escenas Sincronizadas', {
+        type: 'success',
+        description: 'Los recursos multimedia y textos de las escenas se aplicaron a todas las redes.',
+      });
+    } catch (err: any) {
+      toast('Error al sincronizar escenas', {
+        type: 'error',
+        description: err.message,
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleUpdateCaption = async (platform: TargetPlatform, newCaption: string) => {
     const target = adaptations.find((a) => a.platform === platform);
     if (!target) return;
@@ -148,13 +218,19 @@ export function ContentProductionStudio({
         item.brands?.name || 'Aura Social'
       );
 
-      setAdaptations((prev) =>
-        prev.map((a) => (a.id === updated.id ? updated : a))
+      // Auto-propagar a todas las plataformas del contenido
+      const allSynced = await syncScenesToAllAdaptations(
+        item.id,
+        updated.scene_mappings,
+        item.brands?.name || 'Aura Social',
+        currentVersion?.id
       );
 
-      toast('Asset Asignado', {
+      setAdaptations(allSynced);
+
+      toast('Asset Asignado y Sincronizado', {
         type: 'success',
-        description: `Se asignó "${asset.name}" a la Escena #${selectedSceneForAsset}.`,
+        description: `Se asignó "${asset.name}" a la Escena #${selectedSceneForAsset} en todas las plataformas.`,
       });
       setIsAssetPickerOpen(false);
       setSelectedSceneForAsset(null);
@@ -206,10 +282,21 @@ export function ContentProductionStudio({
   };
 
   const handleApproveAdaptation = async (adaptationId: string) => {
-    const approved = await approvePlatformAdaptation(adaptationId);
-    setAdaptations((prev) =>
-      prev.map((a) => (a.id === approved.id ? approved : a))
-    );
+    try {
+      const approved = await approvePlatformAdaptation(adaptationId);
+      setAdaptations((prev) =>
+        prev.map((a) => (a.id === approved.id ? approved : a))
+      );
+      toast('Adaptación Aprobada', {
+        type: 'success',
+        description: `La adaptación para ${activePlatform.toUpperCase()} quedó aprobada para publicación.`,
+      });
+    } catch (err: any) {
+      toast('Error al aprobar adaptación', {
+        type: 'error',
+        description: err.message,
+      });
+    }
   };
 
   if (isLoading) {
@@ -229,24 +316,31 @@ export function ContentProductionStudio({
     format: activeAdaptation?.format || 'reel',
     brand_id: item.brand_id,
     workspace_id: item.workspace_id,
-    campaign_id: item.campaign_id || null,
-    title: item.title || '',
-    caption: activeAdaptation?.caption || item.caption || '',
+    title: item.title,
+    caption: activeAdaptation?.caption || item.hook || '',
     hashtags: activeAdaptation?.hashtags || [],
-    cta: activeAdaptation?.cta || '',
+    cta: activeAdaptation?.cta || 'Seguinos para más',
     media: {
-      render_url: '',
+      render_url: activeAdaptation?.render_output?.media_url || '',
       aspect_ratio: activeAdaptation?.dimensions?.aspect_ratio || '9:16',
       width: activeAdaptation?.dimensions?.width || 1080,
       height: activeAdaptation?.dimensions?.height || 1920,
+      duration_seconds: activeAdaptation?.target_duration_seconds || 15,
       scenes: activeAdaptation?.scene_mappings || [],
     },
-    text_overlays: [],
+    text_overlays: (activeAdaptation?.scene_mappings || [])
+      .filter((s) => s.on_screen_text)
+      .map((s) => ({
+        scene_number: s.scene_number,
+        text: s.on_screen_text!,
+        safe_area_valid: s.safe_area_valid,
+      })),
     brand_profile: {
       brand_name: item.brands?.name || 'Aura Social',
+      handle: item.brands?.name?.toLowerCase().replace(/\s+/g, '') || 'aurasocial',
     },
     validation_snapshot: {
-      isValid: false,
+      isValid: true,
       isBlocked: false,
       errors: [],
       warnings: [],
@@ -289,15 +383,28 @@ export function ContentProductionStudio({
           </div>
         </div>
 
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={loadOrCreateAdaptations}
-          leftIcon={<RefreshCw className="w-3.5 h-3.5" />}
-          className="text-xs"
-        >
-          Regenerar Adaptaciones
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleSyncToAllPlatforms}
+            leftIcon={<Share2 className="w-3.5 h-3.5 text-aura-400" />}
+            className="text-xs border-aura-500/30 text-aura-300 hover:bg-aura-950/30"
+            title="Sincronizar assets y textos de estas escenas a todas las redes"
+          >
+            Sincronizar a Todas las Redes
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={loadOrCreateAdaptations}
+            leftIcon={<RefreshCw className="w-3.5 h-3.5" />}
+            className="text-xs"
+          >
+            Regenerar Adaptaciones
+          </Button>
+        </div>
       </div>
 
       {/* 3-Panel Studio Layout */}
@@ -314,7 +421,9 @@ export function ContentProductionStudio({
               setIsAssetPickerOpen(true);
             }}
             onUpdateSceneText={handleUpdateSceneText}
+            onUpdateSceneTextPosition={handleUpdateSceneTextPosition}
             onUsePlaceholder={handleUsePlaceholder}
+            onSyncToAllPlatforms={handleSyncToAllPlatforms}
           />
         </div>
 
@@ -324,6 +433,7 @@ export function ContentProductionStudio({
             publicationPackage={pkg}
             activeAdaptation={activeAdaptation}
             currentSceneNumber={activeSceneNumber}
+            onUpdateSceneTextPosition={handleUpdateSceneTextPosition}
           />
         </div>
 
