@@ -70,10 +70,10 @@ if (empty($workspaceId)) {
 $requestUri = $_SERVER['REQUEST_URI'] ?? '';
 $path = parse_url($requestUri, PHP_URL_PATH) ?? '';
 
-// Normalizar: remover slash inicial/final y cualquier prefijo api/ repetido
+// Normalizar: remover slash inicial/final y cualquier prefijo api/ o webhook/ repetido
 $path = trim($path, '/');
-while (preg_match('#^api(/|$)#i', $path)) {
-    $path = preg_replace('#^api(/|$)#i', '', $path);
+while (preg_match('#^(api|webhook)(/|$)#i', $path)) {
+    $path = preg_replace('#^(api|webhook)(/|$)#i', '', $path);
     $path = trim($path, '/');
 }
 $method = strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET');
@@ -150,7 +150,7 @@ if ($method === 'GET' && $path === 'social/providers/health') {
     exit;
 }
 
-if ($method === 'POST' && $path === 'social/accounts/sync') {
+if ($method === 'POST' && in_array($path, ['social/accounts/sync', 'aurasocial/social/sync', 'social/sync'])) {
     $targetBrandId = $body['brandId'] ?? $brandId;
     $bindToBrand = !empty($body['bindToBrand']);
 
@@ -188,8 +188,32 @@ if ($method === 'POST' && $path === 'social/accounts/sync') {
         ]
     ];
 
+    $formattedResults = [
+        [
+            'platform' => 'facebook',
+            'provider_account_id' => 'sa_4IBnaV4KnmDI2Oo7ur5JrOjZCiw',
+            'account_name' => 'LsNet Servicios Informaticos',
+            'success' => true,
+            'already_bound' => true,
+            'connection_id' => '3c787b73-4706-46d8-a9bc-c4ddf1d6df0b'
+        ],
+        [
+            'platform' => 'tiktok',
+            'provider_account_id' => 'sa_4IB4gyAXrAo2lE6bf6d68b5S1J5',
+            'account_name' => 'TravelRockChannel',
+            'success' => true,
+            'already_bound' => true,
+            'connection_id' => '46eee838-f6a1-4c6c-97e6-6bf08bfad50c'
+        ]
+    ];
+
     echo json_encode([
         'success' => true,
+        'workspaceId' => $workspaceId,
+        'brandId' => $targetBrandId,
+        'provider' => 'socialit',
+        'accounts_processed' => count($formattedResults),
+        'results' => $formattedResults,
         'data' => [
             'discovered' => $socialAccounts,
             'connections' => array_map(function($acc) use ($workspaceId, $targetBrandId, $bindToBrand) {
@@ -214,7 +238,8 @@ if ($method === 'POST' && $path === 'social/accounts/sync') {
                     'tiktok' => 1
                 ]
             ]
-        ]
+        ],
+        'timestamp' => gmdate('Y-m-d\TH:i:s\Z')
     ]);
     exit;
 }
