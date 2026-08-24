@@ -1,7 +1,8 @@
 import { supabase } from '../lib/supabase';
 import { ContentItem, Scene } from '../types/contentItem';
-import { ContentVersion } from '../types/contentVersion';
 import { ContentAsset } from '../types/contentAsset';
+import { ContentVersion } from '../types/contentVersion';
+import { RenderJob } from '../types/renderJob';
 import {
   PlatformAdaptation,
   TargetPlatform,
@@ -14,7 +15,6 @@ import {
   ValidationStatus,
   RenderStatus,
   PlatformDimensions,
-  PublicationPackage,
 } from '../types/platformAdaptation';
 import { getPlatformProfile, PlatformProfile } from '../config/platformProfiles';
 import { validatePlatformTexts } from './platformTextValidator';
@@ -532,7 +532,8 @@ export async function generateDefaultAdaptations(
  */
 export async function approvePlatformAdaptation(
   adaptationId: string,
-  userId?: string
+  userId?: string,
+  _renderJob?: RenderJob | null
 ): Promise<PlatformAdaptation> {
   const { data, error } = await supabase
     .from('platform_adaptations')
@@ -546,29 +547,102 @@ export async function approvePlatformAdaptation(
 
   const adaptation = data as PlatformAdaptation;
 
-  if (adaptation.readiness_status !== 'valid') {
-    throw new Error(
-      `Solo las adaptaciones en estado 'VALID' pueden ser aprobadas (Estado actual: '${adaptation.readiness_status}').`
-    );
+  // Comprobar si hay errores bloqueantes en el Quality Gate / Validación
+  if (adaptation.validation_status === 'blocked' || (adaptation.validation_errors && adaptation.validation_errors.length > 0)) {
+    const errorMsg = adaptation.validation_errors?.map(e => e.message).join(', ') || 'Errores de validación bloqueantes';
+    throw new Error(`No se puede aprobar la adaptación debido a errores de Quality Gate: ${errorMsg}`);
   }
 
   const approvedAt = new Date().toISOString();
   const approvedBy = userId || '00000000-0000-0000-0000-000000000000';
 
-  const updatedPackage: PublicationPackage = {
-    ...(adaptation.publication_package as PublicationPackage),
-    readiness_status: 'approved',
-    approved_at: approvedAt,
-    approved_by: approvedBy,
-  };
+  const updatedPackage = typeof adaptation.publication_package === 'object' && adaptation.publication_package !== null
+    ? {
+        ...adaptation.publication_package,
+        readiness_status: 'approved',
+        approved_at: approvedAt,
+        approved_by: approvedBy,
+      }
+    : adaptation.publication_package;
 
-  return savePlatformAdaptation({
-    ...adaptation,
-    readiness_status: 'approved',
-    approved_at: approvedAt,
-    approved_by: approvedBy,
-    publication_package: updatedPackage,
-  });
+  const { data: updated, error: updateError } = await supabase
+    .from('platform_adaptations')
+    .update({
+      readiness_status: 'approved',
+      approved_at: approvedAt,
+      approved_by: approvedBy,
+      publication_package: updatedPackage,
+      updated_at: approvedAt,
+    })
+    .eq('id', adaptationId)
+    .select('*')
+    .single();
+
+  if (updateError || !updated) {
+    throw new Error(`Error al persistir aprobación de la adaptación: ${updateError?.message}`);
+  }
+
+  return updated as PlatformAdaptation;
+}
+
+/**
+ * Rechazo Humano de una Adaptación (-> REJECTED).
+ */
+export async function rejectPlatformAdaptation(
+  adaptationId: string,
+  reason?: string,
+  _userId?: string
+): Promise<PlatformAdaptation> {
+  const rejectedAt = new Date().toISOString();
+  const { data: updated, error } = await supabase
+    .from('platform_adaptations')
+    .update({
+      readiness_status: 'blocked',
+      validation_status: 'blocked',
+      approved_at: null,
+      approved_by: null,
+      validation_warnings: reason ? [{ code: 'HUMAN_REJECTED', field: 'readiness_status', message: reason }] : [],
+      updated_at: rejectedAt,
+    })
+    .eq('id', adaptationId)
+    .select('*')
+    .single();
+
+  if (error || !updated) {
+    throw new Error(`Error al rechazar adaptación: ${error?.message}`);
+  }
+
+  return updated as PlatformAdaptation;
+}
+
+/**
+ * Invalida una aprobación previa tras edición de textos o render.
+ */
+export async function invalidatePlatformApproval(
+  adaptationId: string
+): Promise<PlatformAdaptation> {
+  const current = await getPlatformAdaptation(adaptationId);
+  if (!current) {
+    throw new Error(`Adaptación con ID ${adaptationId} no encontrada.`);
+  }
+
+  const { data: updated, error } = await supabase
+    .from('platform_adaptations')
+    .update({
+      readiness_status: current.validation_status === 'blocked' ? 'blocked' : 'valid',
+      approved_at: null,
+      approved_by: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', adaptationId)
+    .select('*')
+    .single();
+
+  if (error || !updated) {
+    throw new Error(`Error al invalidar aprobación: ${error?.message}`);
+  }
+
+  return updated as PlatformAdaptation;
 }
 
 /**
@@ -618,6 +692,7 @@ export async function updateAdaptationSceneAsset(
 
 /**
  * Actualiza campos específicos de una PlatformAdaptation existente re-evaluando validaciones.
+ * Si se modifican textos en una adaptación que ya estaba aprobada, invalida la aprobación automáticamente.
  */
 export async function updatePlatformAdaptation(
   id: string,
@@ -629,13 +704,31 @@ export async function updatePlatformAdaptation(
     throw new Error(`Adaptación con ID ${id} no encontrada.`);
   }
 
+  // Detectar si se modificaron copys
+  const hasCopyChanges = 
+    (updates.caption !== undefined && updates.caption !== current.caption) ||
+    (updates.title !== undefined && updates.title !== current.title) ||
+    (updates.hook !== undefined && updates.hook !== current.hook) ||
+    (updates.cta !== undefined && updates.cta !== current.cta) ||
+    (updates.hashtags !== undefined && JSON.stringify(updates.hashtags) !== JSON.stringify(current.hashtags));
+
   const merged = { ...current, ...updates, updated_at: new Date().toISOString() };
   const readiness = calculatePlatformReadiness(merged, contentItem);
 
   merged.validation_status = readiness.textReady ? 'valid' : 'blocked';
   merged.validation_errors = readiness.errors;
   merged.validation_warnings = readiness.warnings;
-  merged.readiness_status = readiness.isReady ? 'valid' : readiness.status === 'blocked' ? 'blocked' : 'needs_assets';
+
+  // Regla FASE 11: Si hubo cambios de copy y estaba aprobada, invalidar aprobación
+  if (hasCopyChanges && current.readiness_status === 'approved') {
+    merged.readiness_status = readiness.isReady ? 'valid' : readiness.status === 'blocked' ? 'blocked' : 'needs_assets';
+    merged.approved_at = null;
+    merged.approved_by = null;
+  } else if (!updates.readiness_status) {
+    merged.readiness_status = readiness.isReady 
+      ? (current.readiness_status === 'approved' ? 'approved' : 'valid')
+      : readiness.status === 'blocked' ? 'blocked' : 'needs_assets';
+  }
 
   const { data, error } = await supabase
     .from('platform_adaptations')
@@ -655,6 +748,8 @@ export async function updatePlatformAdaptation(
       validation_errors: merged.validation_errors,
       validation_warnings: merged.validation_warnings,
       readiness_status: merged.readiness_status,
+      approved_at: merged.approved_at,
+      approved_by: merged.approved_by,
       updated_at: merged.updated_at,
     })
     .eq('id', id)
@@ -667,6 +762,97 @@ export async function updatePlatformAdaptation(
   }
 
   return data as PlatformAdaptation;
+}
+
+/**
+ * Calcula el estado global de aprobación y readiness de publicación para un conjunto de adaptaciones.
+ */
+export function calculateGlobalPublicationReadiness(
+  adaptations: PlatformAdaptation[],
+  renderJobsMap: Record<string, RenderJob>,
+  supportedPlatforms: Array<{ key: string; label: string }> = [
+    { key: 'instagram', label: 'Instagram' },
+    { key: 'tiktok', label: 'TikTok' },
+    { key: 'facebook', label: 'Facebook' },
+    { key: 'linkedin', label: 'LinkedIn' },
+    { key: 'youtube_shorts', label: 'YouTube Shorts' },
+  ]
+) {
+  const platformStatuses: Record<string, {
+    status: 'ready_to_publish' | 'in_review' | 'not_adapted' | 'rejected' | 'blocked';
+    label: string;
+    badgeColor: string;
+  }> = {};
+
+  let approvedCount = 0;
+  let inReviewCount = 0;
+  let notAdaptedCount = 0;
+  let rejectedCount = 0;
+  let blockedCount = 0;
+
+  for (const sp of supportedPlatforms) {
+    const adapt = adaptations.find(
+      (a) => a.platform === sp.key || (sp.key === 'youtube_shorts' && a.platform === 'youtube')
+    );
+
+    if (!adapt) {
+      notAdaptedCount++;
+      platformStatuses[sp.key] = {
+        status: 'not_adapted',
+        label: 'No adaptada',
+        badgeColor: 'bg-zinc-800 text-zinc-400 border-zinc-700',
+      };
+      continue;
+    }
+
+    const job = renderJobsMap[adapt.id];
+    const hasCompletedRender = job && job.status === 'completed';
+    const isApproved = adapt.readiness_status === 'approved';
+    const isRejected = adapt.readiness_status === 'rejected';
+    const isBlocked = adapt.validation_status === 'blocked' || adapt.readiness_status === 'blocked';
+
+    if (isApproved && hasCompletedRender) {
+      approvedCount++;
+      platformStatuses[sp.key] = {
+        status: 'ready_to_publish',
+        label: 'Listo para publicar',
+        badgeColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+      };
+    } else if (isRejected) {
+      rejectedCount++;
+      platformStatuses[sp.key] = {
+        status: 'rejected',
+        label: 'Rechazado',
+        badgeColor: 'bg-rose-500/20 text-rose-300 border-rose-500/40',
+      };
+    } else if (isBlocked) {
+      blockedCount++;
+      platformStatuses[sp.key] = {
+        status: 'blocked',
+        label: 'Bloqueado',
+        badgeColor: 'bg-red-500/20 text-red-300 border-red-500/40',
+      };
+    } else {
+      inReviewCount++;
+      platformStatuses[sp.key] = {
+        status: 'in_review',
+        label: 'Requiere revisión',
+        badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+      };
+    }
+  }
+
+  return {
+    totalSupported: supportedPlatforms.length,
+    adaptedCount: adaptations.length,
+    approvedCount,
+    inReviewCount,
+    notAdaptedCount,
+    rejectedCount,
+    blockedCount,
+    isAllApproved: approvedCount > 0 && approvedCount === adaptations.length,
+    platformStatuses,
+  };
 }
 
 /**

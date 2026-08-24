@@ -1,0 +1,72 @@
+{
+  "name": "AuraSocial — Social Account Sync",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "daysInterval": 1
+            }
+          ]
+        }
+      },
+      "id": "schedule-daily-trigger",
+      "name": "Daily Sync Trigger (1/day)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.AURASOCIAL_API_URL || 'https://api.aurasocial.app'}}/api/social/accounts/sync",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{$env.AURASOCIAL_N8N_API_KEY}}"
+            },
+            {
+              "name": "x-workspace-id",
+              "value": "={{$env.DEFAULT_WORKSPACE_ID}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "bindToBrand",
+              "value": false
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "sync-social-accounts",
+      "name": "Sync Socialit Accounts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [500, 300]
+    }
+  ],
+  "connections": {
+    "Daily Sync Trigger (1/day)": {
+      "main": [
+        [
+          {
+            "node": "Sync Socialit Accounts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

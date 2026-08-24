@@ -1,0 +1,94 @@
+{
+  "name": "AuraSocial — Publishing Readiness Monitor",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "id": "readiness-interval-trigger",
+      "name": "Every 15 Minutes Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.AURASOCIAL_API_URL || 'https://api.aurasocial.app'}}/api/publishing/readiness/{{$json.content_id}}?platform={{$json.platform}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{$env.AURASOCIAL_N8N_API_KEY}}"
+            },
+            {
+              "name": "x-workspace-id",
+              "value": "={{$env.DEFAULT_WORKSPACE_ID}}"
+            },
+            {
+              "name": "x-brand-id",
+              "value": "={{$json.brand_id}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "evaluate-readiness-node",
+      "name": "Evaluate Publishing Readiness",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [520, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.data.status}}",
+              "value2": "READY_FOR_PUBLISH"
+            }
+          ]
+        }
+      },
+      "id": "is-ready-gate",
+      "name": "Is Ready For Publish?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [780, 300]
+    }
+  ],
+  "connections": {
+    "Every 15 Minutes Trigger": {
+      "main": [
+        [
+          {
+            "node": "Evaluate Publishing Readiness",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluate Publishing Readiness": {
+      "main": [
+        [
+          {
+            "node": "Is Ready For Publish?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

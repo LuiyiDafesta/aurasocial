@@ -2,6 +2,7 @@ import { PublishPackage, PublishingValidationResult, PublishingValidationError }
 import { getPlatformProfile } from '../config/platformProfiles';
 import { PlatformAdaptation } from '../types/platformAdaptation';
 import { RenderJob } from '../types/renderJob';
+import { validateTextForPlaceholders, sanitizeAndValidateHashtags } from './copySanitizerService';
 
 /**
  * Servicio centralizado de validación de calidad y restricciones antes de publicar (Quality Gate).
@@ -37,14 +38,24 @@ export function validatePublishPackage(pkg: PublishPackage): PublishingValidatio
         code: 'DURATION_EXCEEDED',
       });
     }
+
+    // MIME type check
+    if (pkg.media.mime_type && !pkg.media.mime_type.startsWith('video/') && !pkg.media.mime_type.startsWith('image/')) {
+      errors.push({
+        field: 'media.mime_type',
+        message: `Tipo MIME inválido: '${pkg.media.mime_type}'. Debe ser video/mp4 o imagen compatible.`,
+        code: 'INVALID_MIME_TYPE',
+      });
+    }
   }
 
-  // 2. Validación de Copy & Textos
+  // 2. Validación de Copy & Textos (Text QA)
   if (!pkg.copy) {
     errors.push({ field: 'copy', message: 'Faltan datos de copy en el paquete.', code: 'MISSING_COPY' });
   } else {
     const caption = pkg.copy.caption || '';
     const title = pkg.copy.title || '';
+    const description = pkg.copy.description || '';
     const hashtags = Array.isArray(pkg.copy.hashtags) ? pkg.copy.hashtags : [];
 
     // Caption requerido / longitud
@@ -73,6 +84,22 @@ export function validatePublishPackage(pkg: PublishPackage): PublishingValidatio
       });
     }
 
+    // Validar placeholders y términos prohibidos en caption, title y description
+    const captionPlaceholders = validateTextForPlaceholders(caption, 'copy.caption');
+    for (const issue of captionPlaceholders) {
+      errors.push({ field: issue.field, message: issue.message, code: issue.code });
+    }
+
+    const titlePlaceholders = validateTextForPlaceholders(title, 'copy.title');
+    for (const issue of titlePlaceholders) {
+      errors.push({ field: issue.field, message: issue.message, code: issue.code });
+    }
+
+    const descPlaceholders = validateTextForPlaceholders(description, 'copy.description');
+    for (const issue of descPlaceholders) {
+      errors.push({ field: issue.field, message: issue.message, code: issue.code });
+    }
+
     // Caracteres de control no permitidos
     // eslint-disable-next-line no-control-regex
     const controlCharsRegex = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/;
@@ -90,21 +117,13 @@ export function validatePublishPackage(pkg: PublishPackage): PublishingValidatio
       }
     }
 
-    // Validación de hashtags
-    if (hashtags.length > profile.maxHashtags) {
-      warnings.push({
-        field: 'copy.hashtags',
-        message: `Se recomiendan como máximo ${profile.maxHashtags} hashtags en ${profile.name} (incluidos: ${hashtags.length}).`,
-      });
-    }
-
-    for (const tag of hashtags) {
-      if (!tag.startsWith('#')) {
-        errors.push({ field: 'copy.hashtags', message: `El hashtag '${tag}' debe comenzar con '#'.`, code: 'INVALID_HASHTAG' });
-      } else if (/\s/.test(tag)) {
-        errors.push({ field: 'copy.hashtags', message: `El hashtag '${tag}' contiene espacios inválidos.`, code: 'INVALID_HASHTAG' });
-      } else if (/[!@$%^&*()+=[\]{};':"\\|,.<>/?]/.test(tag.slice(1))) {
-        errors.push({ field: 'copy.hashtags', message: `El hashtag '${tag}' contiene signos especiales no permitidos.`, code: 'INVALID_HASHTAG' });
+    // Validación exhaustiva de hashtags con duplicate check
+    const hashtagValidation = sanitizeAndValidateHashtags(hashtags, profile.maxHashtags);
+    for (const issue of hashtagValidation.issues) {
+      if (issue.type === 'error') {
+        errors.push({ field: 'copy.hashtags', message: issue.message, code: issue.code });
+      } else {
+        warnings.push({ field: 'copy.hashtags', message: issue.message });
       }
     }
 

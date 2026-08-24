@@ -38,7 +38,10 @@ export type ReadinessStatus =
   | 'blocked'
   | 'render_failed'
   | 'valid'
+  | 'in_review'
   | 'approved'
+  | 'ready_to_publish'
+  | 'rejected'
   | 'published';
 
 export interface PlatformDimensions {
@@ -281,4 +284,22 @@ export interface RenderPackage {
   }>;
   safe_area: SafeAreaConfig;
   thumbnail_strategy: { mode: string; time_offset_seconds?: number };
+}
+
+export interface PlatformPublicationStatusInfo {
+  status: 'ready_to_publish' | 'in_review' | 'not_adapted' | 'rejected' | 'blocked';
+  label: string;
+  badgeColor: string;
+}
+
+export interface GlobalPublicationReadinessSummary {
+  totalSupported: number;
+  adaptedCount: number;
+  approvedCount: number;
+  inReviewCount: number;
+  notAdaptedCount: number;
+  rejectedCount: number;
+  blockedCount: number;
+  isAllApproved: boolean;
+  platformStatuses: Record<string, PlatformPublicationStatusInfo>;
 }

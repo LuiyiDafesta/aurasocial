@@ -2,7 +2,9 @@ import { supabase } from '../lib/supabase';
 import { 
   PublishPackage, 
   PublishingOutboxEntry, 
-  SocialPlatform 
+  SocialPlatform,
+  PublicationMethod,
+  PublicationPackage
 } from '../types/publishing';
 import { PlatformAdaptation } from '../types/platformAdaptation';
 import { RenderJob } from '../types/renderJob';
@@ -10,8 +12,7 @@ import {
   validatePublishPackage, 
   validateAdaptationAndRenderForPublishing 
 } from './publishingValidationService';
-import { getPublisherAdapter } from './publishers/socialPublisherAdapter';
-import { getSocialConnection, getOrCreateMockConnection } from './socialConnectionService';
+import { getOrCreateMockConnection } from './socialConnectionService';
 
 /**
  * Ensambla el snapshot inmutable del PublishPackage a partir de la adaptación aprobada y el Render Job completado.
@@ -21,13 +22,15 @@ export function buildPublishPackage(
   renderJob: RenderJob,
   brandName?: string,
   campaignName?: string,
-  publishingOptions: Record<string, any> = {}
+  publishingOptions: Record<string, any> = {},
+  publicationMethod: PublicationMethod = 'automatic'
 ): PublishPackage {
   const meta = renderJob.output_metadata || {};
 
   return {
     platform: adaptation.platform as SocialPlatform,
     platform_adaptation_id: adaptation.id,
+    publication_method: publicationMethod,
     media: {
       render_job_id: renderJob.id,
       storage_bucket: meta.storage_bucket || 'AuraSocial',
@@ -64,18 +67,87 @@ export function buildPublishPackage(
 }
 
 /**
+ * Construye el paquete estructurado final de publicación (PublicationPackage).
+ */
+export function buildStructuredPublicationPackage(
+  adaptation: PlatformAdaptation,
+  renderJob: RenderJob,
+  publicationMethod: PublicationMethod = 'manual',
+  _brandName?: string,
+  _campaignName?: string
+): PublicationPackage {
+  const preValidation = validateAdaptationAndRenderForPublishing(adaptation, renderJob);
+  const meta = renderJob.output_metadata || {};
+
+  return {
+    content_id: adaptation.content_item_id,
+    platform: adaptation.platform as SocialPlatform,
+    publication_method: publicationMethod,
+    title: adaptation.title || undefined,
+    caption: adaptation.caption || undefined,
+    hashtags: Array.isArray(adaptation.hashtags) ? adaptation.hashtags : [],
+    description: adaptation.hook || undefined,
+    media: [
+      {
+        type: 'video',
+        asset_id: renderJob.id,
+        storage_path: renderJob.output_storage_path || '',
+        signed_url: meta.signed_url,
+        filename: `render_${adaptation.platform}_${renderJob.id.slice(0, 8)}.mp4`,
+      },
+      ...(meta.thumbnail_storage_path ? [{
+        type: 'thumbnail' as const,
+        storage_path: meta.thumbnail_storage_path,
+        signed_url: meta.thumbnail_url,
+        filename: `thumbnail_${adaptation.platform}_${renderJob.id.slice(0, 8)}.jpg`,
+      }] : []),
+    ],
+    render_id: renderJob.id,
+    platform_constraints: {
+      aspect_ratio: adaptation.dimensions?.aspect_ratio || '9:16',
+      max_caption_length: 2200,
+      max_hashtags: 30,
+      max_video_duration_seconds: adaptation.target_duration_seconds || 90,
+    },
+    quality_gate: {
+      passed: preValidation.isValid && adaptation.readiness_status === 'approved' && renderJob.status === 'completed',
+      errors: preValidation.errors.map(e => e.message),
+      warnings: preValidation.warnings.map(w => w.message),
+    },
+  };
+}
+
+/**
+ * Obtiene una URL firmada de descarga bajo demanda para un archivo de Backblaze B2.
+ */
+export async function getMediaDownloadUrl(storagePath: string, expiresInSeconds = 3600): Promise<string> {
+  const { getB2SignedUrl } = await import('../lib/b2Storage');
+  return getB2SignedUrl(storagePath, expiresInSeconds);
+}
+
+/**
  * Crea una entrada en publishing_outbox con control estricto de idempotencia y validación de calidad.
  */
 export async function createOutboxEntry(params: {
   adaptation: PlatformAdaptation;
   renderJob: RenderJob;
+  publicationMethod?: PublicationMethod;
   socialConnectionId?: string | null;
   scheduledAt?: string | null;
   brandName?: string;
   campaignName?: string;
   publishingOptions?: Record<string, any>;
 }): Promise<PublishingOutboxEntry> {
-  const { adaptation, renderJob, socialConnectionId, scheduledAt, brandName, campaignName, publishingOptions } = params;
+  const { 
+    adaptation, 
+    renderJob, 
+    publicationMethod = 'automatic',
+    socialConnectionId, 
+    scheduledAt, 
+    brandName, 
+    campaignName, 
+    publishingOptions 
+  } = params;
 
   // 1. Quality Gate previo
   const preValidation = validateAdaptationAndRenderForPublishing(adaptation, renderJob);
@@ -84,7 +156,7 @@ export async function createOutboxEntry(params: {
   }
 
   // 2. Construir PublishPackage snapshot
-  const publishPackage = buildPublishPackage(adaptation, renderJob, brandName, campaignName, publishingOptions);
+  const publishPackage = buildPublishPackage(adaptation, renderJob, brandName, campaignName, publishingOptions, publicationMethod);
 
   // 3. Validar PublishPackage con reglas de plataforma
   const packageValidation = validatePublishPackage(publishPackage);
@@ -92,19 +164,22 @@ export async function createOutboxEntry(params: {
     throw new Error(`Validación de plataforma falló: ${packageValidation.errors.map(e => e.message).join(' | ')}`);
   }
 
-  // 4. Asegurar conexión social mock si no fue pasada
-  let connId = socialConnectionId;
-  if (!connId) {
-    try {
-      const conn = await getOrCreateMockConnection(
-        adaptation.brand_id,
-        adaptation.workspace_id,
-        adaptation.platform as SocialPlatform,
-        brandName
-      );
-      connId = conn.id;
-    } catch (e) {
-      console.warn('No se pudo asociar conexión social mock automática:', e);
+  // 4. Conexión social solo para método automático
+  let connId: string | null = null;
+  if (publicationMethod === 'automatic') {
+    connId = socialConnectionId || null;
+    if (!connId) {
+      try {
+        const conn = await getOrCreateMockConnection(
+          adaptation.brand_id,
+          adaptation.workspace_id,
+          adaptation.platform as SocialPlatform,
+          brandName
+        );
+        connId = conn.id;
+      } catch (e) {
+        console.warn('No se pudo asociar conexión social mock automática:', e);
+      }
     }
   }
 
@@ -130,9 +205,10 @@ export async function createOutboxEntry(params: {
     content_item_id: adaptation.content_item_id,
     platform_adaptation_id: adaptation.id,
     render_job_id: renderJob.id,
-    social_connection_id: connId || null,
+    social_connection_id: connId,
     platform: adaptation.platform,
-    status: scheduledAt ? 'ready' : 'ready',
+    publication_method: publicationMethod,
+    status: publicationMethod === 'manual' ? 'manual_prepared' : (scheduledAt ? 'ready' : 'ready'),
     publish_package: publishPackage,
     scheduled_at: scheduledAt || null,
     queued_at: null,
@@ -140,6 +216,7 @@ export async function createOutboxEntry(params: {
     published_at: null,
     external_post_id: null,
     external_post_url: null,
+    notes: null,
     attempt_count: 0,
     last_attempt_at: null,
     error_code: null,
@@ -172,90 +249,90 @@ export async function createOutboxEntry(params: {
 }
 
 /**
- * Despacha un elemento del Outbox ejecutando el Publisher Adapter correspondiente (MOCK en Fase 9E).
+ * Prepara la publicación manual registrando la entrada en estado 'manual_prepared'.
  */
-export async function dispatchOutbox(outboxId: string): Promise<PublishingOutboxEntry> {
-  const { data: outbox, error: fetchErr } = await supabase
-    .from('publishing_outbox')
-    .select('*')
-    .eq('id', outboxId)
-    .single();
+export async function prepareManualPublishing(params: {
+  adaptation: PlatformAdaptation;
+  renderJob: RenderJob;
+  brandName?: string;
+  campaignName?: string;
+}): Promise<PublishingOutboxEntry> {
+  const { adaptation, renderJob, brandName, campaignName } = params;
+  return createOutboxEntry({
+    adaptation,
+    renderJob,
+    publicationMethod: 'manual',
+    brandName,
+    campaignName,
+  });
+}
 
-  if (fetchErr || !outbox) {
-    throw new Error(`Outbox entry ${outboxId} no encontrada.`);
+/**
+ * Marca una publicación como completada manualmente por el usuario.
+ */
+export async function markAsPublishedManual(params: {
+  outboxId?: string;
+  adaptationId?: string;
+  renderJobId?: string;
+  platform?: SocialPlatform;
+  externalPostUrl?: string | null;
+  publishedAt?: string | null;
+  notes?: string | null;
+}): Promise<PublishingOutboxEntry> {
+  const { outboxId, adaptationId, renderJobId, platform, externalPostUrl, publishedAt, notes } = params;
+  const nowIso = publishedAt || new Date().toISOString();
+
+  let targetId = outboxId;
+
+  if (!targetId && adaptationId && renderJobId && platform) {
+    const { data: existing } = await supabase
+      .from('publishing_outbox')
+      .select('id')
+      .eq('platform_adaptation_id', adaptationId)
+      .eq('render_job_id', renderJobId)
+      .eq('platform', platform)
+      .not('status', 'in', '("cancelled","failed")')
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (existing && existing.length > 0) {
+      targetId = existing[0].id;
+    }
   }
 
-  const entry = outbox as PublishingOutboxEntry;
-
-  if (entry.status === 'published') {
-    return entry;
+  if (!targetId) {
+    throw new Error('No se especificó la publicación a marcar como publicada.');
   }
 
-  // 1. Actualizar a 'queued' y luego 'publishing'
-  const nowIso = new Date().toISOString();
-  await supabase
+  const { data: updated, error: updErr } = await supabase
     .from('publishing_outbox')
     .update({
-      status: 'publishing',
-      queued_at: entry.queued_at || nowIso,
-      started_at: nowIso,
-      attempt_count: (entry.attempt_count || 0) + 1,
-      last_attempt_at: nowIso,
-      updated_at: nowIso,
+      status: 'published',
+      publication_method: 'manual',
+      published_at: nowIso,
+      external_post_url: externalPostUrl ? externalPostUrl.trim() : null,
+      notes: notes ? notes.trim() : null,
+      error_code: null,
+      error_message: null,
+      updated_at: new Date().toISOString(),
     })
-    .eq('id', outboxId);
+    .eq('id', targetId)
+    .select('*')
+    .single();
 
-  // 2. Obtener conexión social si existe
-  let connection = null;
-  if (entry.social_connection_id) {
-    connection = await getSocialConnection(entry.social_connection_id);
+  if (updErr || !updated) {
+    throw new Error(`Error al marcar publicación manual como publicada: ${updErr?.message}`);
   }
 
-  // 3. Ejecutar Mock Publisher
-  const adapter = getPublisherAdapter(entry.platform);
-  const result = await adapter.publish(entry.publish_package, connection);
+  return updated as PublishingOutboxEntry;
+}
 
-  if (result.success) {
-    const { data: updated, error: updErr } = await supabase
-      .from('publishing_outbox')
-      .update({
-        status: 'published',
-        published_at: result.publishedAt || new Date().toISOString(),
-        external_post_id: result.externalPostId,
-        external_post_url: result.externalPostUrl,
-        error_code: null,
-        error_message: null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', outboxId)
-      .select('*')
-      .single();
-
-    if (updErr || !updated) {
-      throw new Error(`Error al actualizar outbox a publicado: ${updErr?.message}`);
-    }
-
-    return updated as PublishingOutboxEntry;
-  } else {
-    // Fallo de publicación
-    const { data: updated, error: updErr } = await supabase
-      .from('publishing_outbox')
-      .update({
-        status: 'failed',
-        error_code: result.errorCode || 'PUBLISH_ERROR',
-        error_message: result.errorMessage || 'Fallo desconocido al publicar',
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', outboxId)
-      .select('*')
-      .single();
-
-    if (updErr || !updated) {
-      throw new Error(`Error al registrar fallo de publicación: ${updErr?.message}`);
-    }
-
-    return updated as PublishingOutboxEntry;
-  }
+/**
+ * Despacha un elemento del Outbox de forma asíncrona, atómica e idempotente (MetaPublisher / Mock).
+ */
+export async function dispatchOutbox(outboxId: string, options?: { forceMock?: boolean }): Promise<PublishingOutboxEntry> {
+  const { dispatchOutboxEntry } = await import('./socialPublishingDispatcher');
+  return dispatchOutboxEntry(outboxId, options);
 }
 
 /**
