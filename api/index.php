@@ -252,38 +252,108 @@ if ($method === 'POST' && $path === 'social/accounts/bind') {
         exit;
     }
 
-    // Mapa de cuentas descubiertas conocidas
-    $knownAccounts = [
-        'sa_4IBnaV4KnmDI2Oo7ur5JrOjZCiw' => [
-            'platform' => 'facebook',
-            'account_name' => 'LsNet Servicios Informaticos',
-            'username' => null
-        ],
-        'sa_4IB4gyAXrAo2lE6bf6d68b5S1J5' => [
-            'platform' => 'tiktok',
-            'account_name' => 'TravelRockChannel',
-            'username' => 'TravelRockChannel'
-        ]
+    // 1. Consultar base de datos Supabase REST para buscar la conexión existente
+    $supaKey = getenv('VITE_SUPABASE_ANON_KEY') ?: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVleWtyZ253ZmFycmxqa290dm13Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcyMDgyNjIsImV4cCI6MjEwMjc4NDI2Mn0.WM7sgjhvR003fHUKIy_r3CJ5S8TaIBA_3179hLkxdRk';
+    $supaHeaders = [
+        "apikey: {$supaKey}",
+        "Authorization: Bearer {$supaKey}",
+        "Content-Type: application/json"
     ];
 
-    $accInfo = $knownAccounts[$providerAccountId] ?? null;
-    $platform = $accInfo ? $accInfo['platform'] : ($body['platform'] ?? 'facebook');
-    $accountName = $accInfo ? $accInfo['account_name'] : "Cuenta {$providerAccountId}";
-    $username = $accInfo ? $accInfo['username'] : null;
+    $queryUrl = "{$SUPABASE_URL}/rest/v1/social_connections?or=(provider_account_id.eq.{$providerAccountId},account_id.eq.{$providerAccountId},id.eq.{$providerAccountId})&select=*";
+    $connRes = makeRequest($queryUrl, 'GET', $supaHeaders);
+
+    $connections = (is_array($connRes['body'])) ? $connRes['body'] : [];
+    
+    // Filtrar conexión coincidente
+    $conn = null;
+    foreach ($connections as $c) {
+        if (($c['provider'] ?? '') === $provider) {
+            $conn = $c;
+            break;
+        }
+    }
+    if (!$conn && !empty($connections)) {
+        $conn = $connections[0];
+    }
+
+    if (!$conn) {
+        http_response_code(400);
+        echo json_encode([
+            'success' => false,
+            'error' => "ACCOUNT_NOT_FOUND: Cuenta social '{$providerAccountId}' no encontrada como cuenta descubierta en el sistema."
+        ]);
+        exit;
+    }
+
+    // 2. Validar aislamiento de Workspace (Tenant)
+    if (($conn['workspace_id'] ?? '') !== $workspaceId) {
+        http_response_code(403);
+        echo json_encode([
+            'success' => false,
+            'error' => "TENANT_MISMATCH: La cuenta social pertenece al workspace '{$conn['workspace_id']}', no a '{$workspaceId}'. Asignación denegada."
+        ]);
+        exit;
+    }
+
+    // 3. Regla de Idempotencia: Si ya está vinculada a la MISMA marca
+    if (($conn['brand_id'] ?? '') === $targetBrandId) {
+        echo json_encode([
+            'success' => true,
+            'data' => [
+                'connection' => [
+                    'id' => $conn['id'],
+                    'workspace_id' => $conn['workspace_id'],
+                    'brand_id' => $conn['brand_id'],
+                    'platform' => $conn['platform'],
+                    'provider' => $conn['provider'],
+                    'provider_account_id' => $conn['provider_account_id'] ?? $conn['account_id'],
+                    'account_name' => $conn['account_name'],
+                    'account_username' => $conn['account_username'] ?? null,
+                    'status' => $conn['status']
+                ],
+                'already_bound' => true
+            ]
+        ]);
+        exit;
+    }
+
+    // 4. Regla Multi-Brand Conflict: Si está vinculada a OTRA marca
+    if (!empty($conn['brand_id']) && $conn['brand_id'] !== $targetBrandId) {
+        http_response_code(409);
+        echo json_encode([
+            'success' => false,
+            'error' => "ALREADY_BOUND_TO_ANOTHER_BRAND: La cuenta social '{$providerAccountId}' ya está vinculada a la marca '{$conn['brand_id']}'. Se requiere una desvinculación (unbind) explícita antes de reasignar."
+        ]);
+        exit;
+    }
+
+    // 5. Vincular a la marca (Actualizar en Supabase REST)
+    $patchUrl = "{$SUPABASE_URL}/rest/v1/social_connections?id=eq.{$conn['id']}";
+    $patchData = [
+        'brand_id' => $targetBrandId,
+        'status' => ($conn['status'] === 'disconnected' ? 'connected' : $conn['status']),
+        'updated_at' => gmdate('Y-m-d\TH:i:s\Z')
+    ];
+    $patchHeaders = array_merge($supaHeaders, ["Prefer: return=representation"]);
+    $patchRes = makeRequest($patchUrl, 'PATCH', $patchHeaders, $patchData);
+
+    $updatedConn = (is_array($patchRes['body']) && !empty($patchRes['body'])) ? $patchRes['body'][0] : $conn;
+    $updatedConn['brand_id'] = $targetBrandId;
 
     echo json_encode([
         'success' => true,
         'data' => [
             'connection' => [
-                'id' => "conn_{$provider}_{$providerAccountId}",
-                'workspace_id' => $workspaceId,
-                'brand_id' => $targetBrandId,
-                'platform' => $platform,
-                'provider' => $provider,
-                'provider_account_id' => $providerAccountId,
-                'account_name' => $accountName,
-                'account_username' => $username,
-                'status' => 'connected'
+                'id' => $updatedConn['id'],
+                'workspace_id' => $updatedConn['workspace_id'] ?? $workspaceId,
+                'brand_id' => $updatedConn['brand_id'],
+                'platform' => $updatedConn['platform'],
+                'provider' => $updatedConn['provider'],
+                'provider_account_id' => $updatedConn['provider_account_id'] ?? $updatedConn['account_id'],
+                'account_name' => $updatedConn['account_name'],
+                'account_username' => $updatedConn['account_username'] ?? null,
+                'status' => $updatedConn['status'] ?? 'connected'
             ],
             'already_bound' => false
         ]
