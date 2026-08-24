@@ -405,6 +405,9 @@ if ($method === 'GET' && $path === 'social/accounts') {
             'brand_id' => $targetBrand
         ]
     ]);
+    exit;
+}
+
 if ($method === 'POST' && $path === 'social/publish') {
     $mode = $body['mode'] ?? 'dry_run';
     $targets = $body['targets'] ?? [];
