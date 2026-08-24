@@ -1,10 +1,16 @@
-# WALKTHROUGH — FASE 10: PRODUCTION PILOT & REAL CONTENT DRY RUN
+# WALKTHROUGH — AURASOCIAL: FASES 12D & 13.0
+## SOCIALIT REAL CONNECTION, N8N ORCHESTRATION & SOCIAL PUBLISHING (DRY RUN ONLY)
 
 ## Resumen Ejecutivo
 
-En la **Fase 10**, se ejecutó exitosamente la prueba piloto integral de producción (Dry Run) de punta a punta del ecosistema AuraSocial utilizando el escenario de la marca **TravelRockChannel** con el objetivo estratégico de promoción de viajes de egresados a Bariloche.
-
-La ejecución validó todo el pipeline determinista, multi-tenant, append-only y de costo $0.00 USD, sin invocar APIs generativas de pago y sin publicar contenido real en redes sociales.
+En las **Fases 12D.1 a 12D.6 y Fase 13.0**, se completó la arquitectura integral de orquestación AuraSocial ↔ n8n ↔ Socialit:
+1. **Fase 12D.1**: Conexión real con API de Socialit y descubrimiento de cuentas sociales.
+2. **Fase 12D.2**: Vinculación de cuentas sociales a marcas (`brand_id`) y verificación de salud de tokens.
+3. **Fase 12D.3**: Orquestador Server-to-Server, Fallback Policy (Socialit Primary / Robin Research Secondary) y Readiness Monitor.
+4. **Fase 12D.4**: API de Binding Server-to-Server `/api/social/accounts/bind` con idempotencia estricta en base de datos.
+5. **Fase 12D.5**: Integración con n8n (`AuraSocial - Sync Socialit Accounts`) con Webhook Trigger y procesamiento dinámico.
+6. **Fase 12D.6**: Production Webhook Wiring verificado con respuesta 200 OK en producción.
+7. **Fase 13.0**: Orquestador de Publicación Social (`AuraSocial - Social Publishing Orchestrator`) en modo **DRY RUN ONLY** (Cero publicación real, `REAL_PUBLISHING_ENABLED = false`).
 
 ---
 
