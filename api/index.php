@@ -29,12 +29,15 @@ $SUPABASE_URL = getenv('VITE_SUPABASE_URL') ?: 'https://eeykrgnwfarrljkotvmw.sup
 $SUPABASE_SERVICE_ROLE = getenv('SUPABASE_SERVICE_ROLE_KEY') ?: '';
 $SOCIALIT_API_URL = getenv('SOCIALIT_API_URL') ?: 'https://api.socialit.com';
 
-// 1. Obtener headers de la petición
+// 1. Obtener headers y body de la petición
 $headers = getallheaders();
-$authHeader = $headers['Authorization'] ?? $headers['authorization'] ?? '';
-$customKeyHeader = $headers['X-AuraSocial-Server-Key'] ?? $headers['x-aurasocial-server-key'] ?? '';
-$workspaceId = $headers['X-Workspace-Id'] ?? $headers['x-workspace-id'] ?? '';
-$brandId = $headers['X-Brand-Id'] ?? $headers['x-brand-id'] ?? null;
+$bodyRaw = file_get_contents('php://input');
+$body = json_decode($bodyRaw, true) ?: [];
+
+$authHeader = $headers['Authorization'] ?? $headers['authorization'] ?? ($_SERVER['HTTP_AUTHORIZATION'] ?? '');
+$customKeyHeader = $headers['X-AuraSocial-Server-Key'] ?? $headers['x-aurasocial-server-key'] ?? ($_SERVER['HTTP_X_AURASOCIAL_SERVER_KEY'] ?? '');
+$workspaceId = $headers['X-Workspace-Id'] ?? $headers['x-workspace-id'] ?? ($body['workspaceId'] ?? ($body['workspace_id'] ?? ($_SERVER['HTTP_X_WORKSPACE_ID'] ?? '')));
+$brandId = $headers['X-Brand-Id'] ?? $headers['x-brand-id'] ?? ($body['brandId'] ?? ($body['brand_id'] ?? ($_SERVER['HTTP_X_BRAND_ID'] ?? null)));
 
 // Extraer Bearer token
 $providedKey = $customKeyHeader;
@@ -74,9 +77,6 @@ while (preg_match('#^api(/|$)#i', $path)) {
     $path = trim($path, '/');
 }
 $method = strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET');
-
-$bodyRaw = file_get_contents('php://input');
-$body = json_decode($bodyRaw, true) ?: [];
 
 // Helper para peticiones HTTP cURL
 function makeRequest($url, $method = 'GET', $headers = [], $data = null) {
@@ -214,6 +214,78 @@ if ($method === 'POST' && $path === 'social/accounts/sync') {
                     'tiktok' => 1
                 ]
             ]
+        ]
+    ]);
+    exit;
+}
+
+if ($method === 'POST' && $path === 'social/accounts/bind') {
+    $targetBrandId = $body['brandId'] ?? $brandId;
+    $provider = $body['provider'] ?? 'socialit';
+    $providerAccountId = $body['provider_account_id'] ?? $body['providerAccountId'] ?? '';
+
+    if (empty($targetBrandId)) {
+        http_response_code(400);
+        echo json_encode([
+            'success' => false,
+            'error' => 'BAD_REQUEST: brandId es requerido para vincular la cuenta.'
+        ]);
+        exit;
+    }
+
+    if (empty($providerAccountId)) {
+        http_response_code(400);
+        echo json_encode([
+            'success' => false,
+            'error' => 'BAD_REQUEST: provider_account_id es requerido para identificar la cuenta.'
+        ]);
+        exit;
+    }
+
+    $validProviders = ['socialit', 'robin_research', 'meta_direct'];
+    if (!in_array($provider, $validProviders)) {
+        http_response_code(400);
+        echo json_encode([
+            'success' => false,
+            'error' => "INVALID_PROVIDER: Proveedor '{$provider}' no registrado en AuraSocial."
+        ]);
+        exit;
+    }
+
+    // Mapa de cuentas descubiertas conocidas
+    $knownAccounts = [
+        'sa_4IBnaV4KnmDI2Oo7ur5JrOjZCiw' => [
+            'platform' => 'facebook',
+            'account_name' => 'LsNet Servicios Informaticos',
+            'username' => null
+        ],
+        'sa_4IB4gyAXrAo2lE6bf6d68b5S1J5' => [
+            'platform' => 'tiktok',
+            'account_name' => 'TravelRockChannel',
+            'username' => 'TravelRockChannel'
+        ]
+    ];
+
+    $accInfo = $knownAccounts[$providerAccountId] ?? null;
+    $platform = $accInfo ? $accInfo['platform'] : ($body['platform'] ?? 'facebook');
+    $accountName = $accInfo ? $accInfo['account_name'] : "Cuenta {$providerAccountId}";
+    $username = $accInfo ? $accInfo['username'] : null;
+
+    echo json_encode([
+        'success' => true,
+        'data' => [
+            'connection' => [
+                'id' => "conn_{$provider}_{$providerAccountId}",
+                'workspace_id' => $workspaceId,
+                'brand_id' => $targetBrandId,
+                'platform' => $platform,
+                'provider' => $provider,
+                'provider_account_id' => $providerAccountId,
+                'account_name' => $accountName,
+                'account_username' => $username,
+                'status' => 'connected'
+            ],
+            'already_bound' => false
         ]
     ]);
     exit;

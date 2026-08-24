@@ -188,6 +188,169 @@ export class N8NInternalApiService {
   }
 
   /**
+   * POST /api/social/accounts/bind
+   * Asigna una cuenta social descubierta por Socialit a una Marca de AuraSocial.
+   */
+  async bindSocialAccount(
+    headers: Record<string, any>,
+    body: {
+      workspaceId?: string;
+      brandId?: string;
+      provider?: string;
+      provider_account_id?: string;
+      platform?: SocialPlatform;
+    }
+  ): Promise<ApiResponse> {
+    const auth = validateN8NServerRequest(headers);
+    if (!auth.isValid || !auth.context) {
+      return { success: false, error: auth.error || 'UNAUTHORIZED' };
+    }
+
+    const workspaceId = body.workspaceId || auth.context.workspace_id;
+    const brandId = body.brandId || auth.context.brand_id;
+    const provider = body.provider || 'socialit';
+    const providerAccountId = body.provider_account_id;
+
+    if (!workspaceId) {
+      return { success: false, error: 'BAD_REQUEST: workspaceId es requerido.' };
+    }
+    if (!brandId) {
+      return { success: false, error: 'BAD_REQUEST: brandId es requerido.' };
+    }
+    if (!providerAccountId) {
+      return { success: false, error: 'BAD_REQUEST: provider_account_id es requerido.' };
+    }
+
+    // 1. Validar que el provider sea registrado
+    const prov = socialProviderRegistry.getProvider(provider as any);
+    if (!prov) {
+      return { success: false, error: `INVALID_PROVIDER: Proveedor '${provider}' no está registrado en AuraSocial.` };
+    }
+
+    // 2. Validar que la marca exista y pertenezca al workspace
+    const { data: brand, error: brandErr } = await supabase
+      .from('brands')
+      .select('id, workspace_id, name')
+      .eq('id', brandId)
+      .single();
+
+    if (brandErr || !brand) {
+      return { success: false, error: `BRAND_NOT_FOUND: Marca '${brandId}' no encontrada.` };
+    }
+
+    if (brand.workspace_id !== workspaceId) {
+      return { success: false, error: `TENANT_MISMATCH: La marca '${brandId}' pertenece a otro workspace ('${brand.workspace_id}'), no a '${workspaceId}'.` };
+    }
+
+    // 3. Buscar la cuenta descubierta por provider_account_id o id
+    const { data: connections, error: connErr } = await supabase
+      .from('social_connections')
+      .select('*')
+      .or(`provider_account_id.eq.${providerAccountId},account_id.eq.${providerAccountId},id.eq.${providerAccountId}`);
+
+    if (connErr || !connections || connections.length === 0) {
+      return { success: false, error: `ACCOUNT_NOT_FOUND: Cuenta social '${providerAccountId}' no encontrada como cuenta descubierta en el sistema.` };
+    }
+
+    // Filtrar la conexión correspondiente al proveedor
+    const conn = connections.find(c => c.provider === provider) || connections[0];
+
+    // 4. Validar aislamiento multi-tenant de la cuenta
+    if (conn.workspace_id !== workspaceId) {
+      return { success: false, error: `TENANT_MISMATCH: La cuenta social pertenece al workspace '${conn.workspace_id}', no a '${workspaceId}'. Asignación denegada.` };
+    }
+
+    // 5. Validar si ya está vinculada a la MISMA marca (Idempotente)
+    if (conn.brand_id === brandId) {
+      observabilityService.logEvent({
+        event: 'social_account_bound',
+        workspace_id: workspaceId,
+        brand_id: brandId,
+        details: {
+          connection_id: conn.id,
+          provider_account_id: providerAccountId,
+          platform: conn.platform,
+          provider: conn.provider,
+          already_bound: true,
+        },
+      });
+
+      return {
+        success: true,
+        data: {
+          connection: {
+            id: conn.id,
+            workspace_id: conn.workspace_id,
+            brand_id: conn.brand_id,
+            platform: conn.platform,
+            provider: conn.provider,
+            provider_account_id: conn.provider_account_id || conn.account_id,
+            account_name: conn.account_name,
+            account_username: conn.account_username,
+            status: conn.status,
+          },
+          already_bound: true,
+        },
+      };
+    }
+
+    // 6. Validar si está vinculada a OTRA marca (Bloquear reasignación silenciosa)
+    if (conn.brand_id && conn.brand_id !== brandId) {
+      return {
+        success: false,
+        error: `ALREADY_BOUND_TO_ANOTHER_BRAND: La cuenta social '${providerAccountId}' ya está vinculada a la marca '${conn.brand_id}'. Se requiere una desvinculación (unbind) explícita antes de reasignar.`,
+      };
+    }
+
+    // 7. Realizar binding actualizando brand_id
+    const { data: updatedConn, error: updateErr } = await supabase
+      .from('social_connections')
+      .update({
+        brand_id: brandId,
+        status: conn.status === 'disconnected' ? 'connected' : conn.status,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', conn.id)
+      .select('*')
+      .single();
+
+    if (updateErr || !updatedConn) {
+      return { success: false, error: `DATABASE_ERROR: No se pudo actualizar el vínculo de la cuenta: ${updateErr?.message}` };
+    }
+
+    observabilityService.logEvent({
+      event: 'social_account_bound',
+      workspace_id: workspaceId,
+      brand_id: brandId,
+      details: {
+        connection_id: updatedConn.id,
+        provider_account_id: providerAccountId,
+        platform: updatedConn.platform,
+        provider: updatedConn.provider,
+        already_bound: false,
+      },
+    });
+
+    return {
+      success: true,
+      data: {
+        connection: {
+          id: updatedConn.id,
+          workspace_id: updatedConn.workspace_id,
+          brand_id: updatedConn.brand_id,
+          platform: updatedConn.platform,
+          provider: updatedConn.provider,
+          provider_account_id: updatedConn.provider_account_id || updatedConn.account_id,
+          account_name: updatedConn.account_name,
+          account_username: updatedConn.account_username,
+          status: updatedConn.status,
+        },
+        already_bound: false,
+      },
+    };
+  }
+
+  /**
    * POST /api/social/accounts/:id/health-check
    */
   async runSocialAccountHealthCheck(

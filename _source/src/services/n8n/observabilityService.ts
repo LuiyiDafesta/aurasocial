@@ -8,6 +8,7 @@ export type OrchestrationEventType =
   | 'provider_account_expiring'
   | 'provider_account_expired'
   | 'provider_fallback_triggered'
+  | 'social_account_bound'
   | 'publishing_readiness_changed';
 
 export interface OrchestrationEventPayload {
