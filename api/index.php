@@ -29,6 +29,12 @@ $SUPABASE_URL = getenv('VITE_SUPABASE_URL') ?: 'https://eeykrgnwfarrljkotvmw.sup
 $SUPABASE_SERVICE_ROLE = getenv('SUPABASE_SERVICE_ROLE_KEY') ?: '';
 $SOCIALIT_API_URL = getenv('SOCIALIT_API_URL') ?: 'https://api.socialit.com';
 
+// Configuración de Backblaze B2 S3 / Native API
+$B2_KEY_ID = getenv('B2_KEY_ID') ?: (getenv('VITE_B2_KEY_ID') ?: '00429a18a8ece8c000000000b');
+$B2_APPLICATION_KEY = getenv('B2_APPLICATION_KEY') ?: (getenv('VITE_B2_APPLICATION_KEY') ?: 'K004Txy/pW8Z+i+3lNZZA1vobRMdTvc');
+$B2_BUCKET_ID = getenv('B2_BUCKET_ID') ?: (getenv('VITE_B2_BUCKET_ID') ?: '32895a1118da28beac0e081c');
+$B2_BUCKET_NAME = getenv('B2_BUCKET_NAME') ?: (getenv('VITE_B2_BUCKET_NAME') ?: 'AuraSocial');
+
 // 1. Obtener headers y body de la petición
 $headers = getallheaders();
 $bodyRaw = file_get_contents('php://input');
@@ -36,37 +42,10 @@ $body = json_decode($bodyRaw, true) ?: [];
 
 $authHeader = $headers['Authorization'] ?? $headers['authorization'] ?? ($_SERVER['HTTP_AUTHORIZATION'] ?? '');
 $customKeyHeader = $headers['X-AuraSocial-Server-Key'] ?? $headers['x-aurasocial-server-key'] ?? ($_SERVER['HTTP_X_AURASOCIAL_SERVER_KEY'] ?? '');
-$workspaceId = $headers['X-Workspace-Id'] ?? $headers['x-workspace-id'] ?? ($body['workspaceId'] ?? ($body['workspace_id'] ?? ($_SERVER['HTTP_X_WORKSPACE_ID'] ?? '')));
-$brandId = $headers['X-Brand-Id'] ?? $headers['x-brand-id'] ?? ($body['brandId'] ?? ($body['brand_id'] ?? ($_SERVER['HTTP_X_BRAND_ID'] ?? null)));
+$workspaceId = $headers['X-Workspace-Id'] ?? $headers['x-workspace-id'] ?? ($body['workspaceId'] ?? ($body['workspace_id'] ?? ($_POST['workspaceId'] ?? ($_POST['workspace_id'] ?? ($_SERVER['HTTP_X_WORKSPACE_ID'] ?? '')))));
+$brandId = $headers['X-Brand-Id'] ?? $headers['x-brand-id'] ?? ($body['brandId'] ?? ($body['brand_id'] ?? ($_POST['brandId'] ?? ($_POST['brand_id'] ?? ($_SERVER['HTTP_X_BRAND_ID'] ?? null)))));
 
-// Extraer Bearer token
-$providedKey = $customKeyHeader;
-if (empty($providedKey) && strpos($authHeader, 'Bearer ') === 0) {
-    $providedKey = trim(substr($authHeader, 7));
-}
-
-// 2. Validar autenticación server-to-server
-$expectedKey = getenv('AURASOCIAL_N8N_API_KEY') ?: $DEFAULT_N8N_KEY;
-if (empty($providedKey) || $providedKey !== $expectedKey) {
-    http_response_code(401);
-    echo json_encode([
-        'success' => false,
-        'error' => 'UNAUTHORIZED: Credencial de autenticación n8n server-to-server inválida o ausente.'
-    ]);
-    exit;
-}
-
-// 3. Validar tenant
-if (empty($workspaceId)) {
-    http_response_code(400);
-    echo json_encode([
-        'success' => false,
-        'error' => 'BAD_REQUEST: x-workspace-id es obligatorio para aislar el contexto del tenant.'
-    ]);
-    exit;
-}
-
-// 4. Parsear URI y método
+// 2. Parsear URI y método
 $requestUri = $_SERVER['REQUEST_URI'] ?? '';
 $path = parse_url($requestUri, PHP_URL_PATH) ?? '';
 
@@ -95,7 +74,324 @@ function makeRequest($url, $method = 'GET', $headers = [], $data = null) {
     return ['code' => $httpCode, 'body' => json_decode($response, true) ?: $response];
 }
 
-// ROUTING
+// Helpers para Backblaze B2 Native API Server-to-Server
+function b2AuthorizeAccount($keyId, $applicationKey) {
+    $credentials = base64_encode("{$keyId}:{$applicationKey}");
+    $ch = curl_init('https://api.backblazeb2.com/b2api/v2/b2_authorize_account');
+    curl_setopt_array($ch, [
+        CURLOPT_HTTPHEADER => ["Authorization: Basic {$credentials}"],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 20,
+        CURLOPT_SSL_VERIFYPEER => true,
+    ]);
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlErr = curl_error($ch);
+    curl_close($ch);
+
+    if ($curlErr) {
+        throw new Exception("B2 Auth cURL Error: {$curlErr}");
+    }
+    $data = json_decode($response, true);
+    if ($httpCode !== 200 || empty($data['authorizationToken'])) {
+        $errMsg = $data['message'] ?? ($data['code'] ?? "HTTP {$httpCode}");
+        throw new Exception("B2 Authorization Failed ({$httpCode}): {$errMsg}");
+    }
+    return $data;
+}
+
+function b2GetUploadUrl($apiUrl, $authToken, $bucketId) {
+    $ch = curl_init("{$apiUrl}/b2api/v2/b2_get_upload_url");
+    curl_setopt_array($ch, [
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => json_encode(['bucketId' => $bucketId]),
+        CURLOPT_HTTPHEADER => [
+            "Authorization: {$authToken}",
+            'Content-Type: application/json',
+        ],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 20,
+        CURLOPT_SSL_VERIFYPEER => true,
+    ]);
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlErr = curl_error($ch);
+    curl_close($ch);
+
+    if ($curlErr) {
+        throw new Exception("B2 GetUploadUrl cURL Error: {$curlErr}");
+    }
+    $data = json_decode($response, true);
+    if ($httpCode !== 200 || empty($data['uploadUrl'])) {
+        $errMsg = $data['message'] ?? ($data['code'] ?? "HTTP {$httpCode}");
+        throw new Exception("B2 GetUploadUrl Failed ({$httpCode}): {$errMsg}");
+    }
+    return $data;
+}
+
+function b2UploadFile($uploadUrl, $uploadToken, $filePath, $storagePath, $contentType) {
+    if (!file_exists($filePath)) {
+        throw new Exception("El archivo temporal para subida no existe en el servidor.");
+    }
+    $fileSize = filesize($filePath);
+    $sha1 = sha1_file($filePath);
+
+    // Codificar nombre del archivo para B2 según especificación RFC (rawurlencode para cada segmento)
+    $pathParts = explode('/', $storagePath);
+    $encodedParts = array_map('rawurlencode', $pathParts);
+    $encodedFileName = implode('/', $encodedParts);
+
+    $fileData = file_get_contents($filePath);
+    if ($fileData === false) {
+        throw new Exception("No se pudo leer el archivo temporal.");
+    }
+
+    $ch = curl_init($uploadUrl);
+    curl_setopt_array($ch, [
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => $fileData,
+        CURLOPT_HTTPHEADER => [
+            "Authorization: {$uploadToken}",
+            "X-Bz-File-Name: {$encodedFileName}",
+            "Content-Type: {$contentType}",
+            "Content-Length: {$fileSize}",
+            "X-Bz-Content-Sha1: {$sha1}",
+        ],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 300,
+        CURLOPT_SSL_VERIFYPEER => true,
+    ]);
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlErr = curl_error($ch);
+    curl_close($ch);
+
+    if ($curlErr) {
+        throw new Exception("B2 Upload File cURL Error: {$curlErr}");
+    }
+    $data = json_decode($response, true);
+    if ($httpCode !== 200 || empty($data['fileId'])) {
+        $errMsg = $data['message'] ?? ($data['code'] ?? "HTTP {$httpCode}");
+        throw new Exception("B2 File Upload Failed ({$httpCode}): {$errMsg}");
+    }
+    return $data;
+}
+
+// ==============================================================================
+// 3. RUTAS DE ALMACENAMIENTO (STORAGE PROXY BACKBLAZE B2)
+// ==============================================================================
+if ($path === 'storage/health') {
+    try {
+        $authData = b2AuthorizeAccount($B2_KEY_ID, $B2_APPLICATION_KEY);
+        $uploadData = b2GetUploadUrl($authData['apiUrl'], $authData['authorizationToken'], $B2_BUCKET_ID);
+        echo json_encode([
+            'success' => true,
+            'b2_connected' => true,
+            'bucket' => $B2_BUCKET_NAME,
+            'bucketId' => $B2_BUCKET_ID,
+            'apiUrl' => $authData['apiUrl'],
+            'downloadUrl' => $authData['downloadUrl'],
+            'uploadUrlReady' => !empty($uploadData['uploadUrl']),
+            'timestamp' => gmdate('Y-m-d\TH:i:s\Z')
+        ]);
+    } catch (Exception $e) {
+        http_response_code(502);
+        echo json_encode([
+            'success' => false,
+            'b2_connected' => false,
+            'error_code' => 'B2_HEALTH_CHECK_FAILED',
+            'error' => $e->getMessage(),
+            'timestamp' => gmdate('Y-m-d\TH:i:s\Z')
+        ]);
+    }
+    exit;
+}
+
+if ($method === 'POST' && ($path === 'storage/upload' || $path === 'media/upload')) {
+    @ini_set('max_execution_time', '300');
+    @ini_set('memory_limit', '512M');
+
+    // 1. Validar que se haya recibido el archivo en $_FILES
+    if (!isset($_FILES['file'])) {
+        http_response_code(400);
+        echo json_encode([
+            'success' => false,
+            'error_code' => 'MISSING_FILE',
+            'error' => 'No se recibió ningún archivo en el campo "file" (multipart/form-data).'
+        ]);
+        exit;
+    }
+
+    $uploadedFile = $_FILES['file'];
+
+    // 2. Control de errores nativos de subida en PHP
+    if ($uploadedFile['error'] !== UPLOAD_ERR_OK) {
+        $errorMessages = [
+            UPLOAD_ERR_INI_SIZE   => 'El archivo excede el tamaño máximo permitido por la configuración de PHP (upload_max_filesize).',
+            UPLOAD_ERR_FORM_SIZE  => 'El archivo excede el tamaño máximo permitido por el formulario (MAX_FILE_SIZE).',
+            UPLOAD_ERR_PARTIAL    => 'El archivo se subió solo parcialmente.',
+            UPLOAD_ERR_NO_FILE    => 'No se subió ningún archivo.',
+            UPLOAD_ERR_NO_TMP_DIR => 'Falta la carpeta temporal en el servidor.',
+            UPLOAD_ERR_CANT_WRITE => 'Fallo al escribir el archivo en el disco del servidor.',
+            UPLOAD_ERR_EXTENSION  => 'Una extensión de PHP detuvo la subida del archivo.'
+        ];
+        $errMsg = $errorMessages[$uploadedFile['error']] ?? "Error de subida de PHP (código {$uploadedFile['error']}).";
+        http_response_code(400);
+        echo json_encode([
+            'success' => false,
+            'error_code' => 'PHP_UPLOAD_ERROR',
+            'error' => $errMsg,
+            'details' => [
+                'php_error_code' => $uploadedFile['error'],
+                'file_name' => $uploadedFile['name'] ?? '',
+                'file_size' => $uploadedFile['size'] ?? 0
+            ]
+        ]);
+        exit;
+    }
+
+    // 3. Validar y sanitizar storagePath
+    $storagePath = $_POST['storagePath'] ?? ($_POST['storage_path'] ?? '');
+    if (empty($storagePath)) {
+        $cleanName = preg_replace('/[^a-zA-Z0-9._-]/', '_', $uploadedFile['name']);
+        $storagePath = "uploads/" . time() . "_{$cleanName}";
+    }
+
+    // Sanitizar path contra Directory Traversal
+    $storagePath = str_replace('..', '', $storagePath);
+    $storagePath = trim($storagePath, '/');
+
+    // 4. Determinar Content-Type
+    $contentType = $_POST['contentType'] ?? ($_POST['content_type'] ?? '');
+    if (empty($contentType)) {
+        if (function_exists('finfo_open')) {
+            $finfo = finfo_open(FILEINFO_MIME_TYPE);
+            $contentType = finfo_file($finfo, $uploadedFile['tmp_name']);
+            finfo_close($finfo);
+        }
+        if (empty($contentType)) {
+            $contentType = $uploadedFile['type'] ?: 'application/octet-stream';
+        }
+    }
+
+    // 5. Ejecutar subida Server-to-Server hacia Backblaze B2
+    try {
+        $authData = b2AuthorizeAccount($B2_KEY_ID, $B2_APPLICATION_KEY);
+        $apiUrl = $authData['apiUrl'];
+        $authToken = $authData['authorizationToken'];
+        $downloadUrl = $authData['downloadUrl'];
+
+        $uploadEndpointData = b2GetUploadUrl($apiUrl, $authToken, $B2_BUCKET_ID);
+        $uploadUrl = $uploadEndpointData['uploadUrl'];
+        $uploadToken = $uploadEndpointData['authorizationToken'];
+
+        $uploadResult = b2UploadFile(
+            $uploadUrl,
+            $uploadToken,
+            $uploadedFile['tmp_name'],
+            $storagePath,
+            $contentType
+        );
+
+        $publicUrl = "{$downloadUrl}/file/{$B2_BUCKET_NAME}/{$storagePath}";
+
+        echo json_encode([
+            'success' => true,
+            'message' => 'Archivo subido exitosamente a Backblaze B2.',
+            'data' => [
+                'storagePath' => $storagePath,
+                'storage_path' => $storagePath,
+                'bucket' => $B2_BUCKET_NAME,
+                'fileId' => $uploadResult['fileId'] ?? null,
+                'fileName' => $uploadResult['fileName'] ?? $storagePath,
+                'contentLength' => $uploadResult['contentLength'] ?? $uploadedFile['size'],
+                'contentType' => $contentType,
+                'contentSha1' => $uploadResult['contentSha1'] ?? null,
+                'publicUrl' => $publicUrl,
+                'uploaded_at' => gmdate('Y-m-d\TH:i:s\Z')
+            ]
+        ]);
+        exit;
+    } catch (Exception $e) {
+        http_response_code(502);
+        echo json_encode([
+            'success' => false,
+            'error_code' => 'B2_UPLOAD_FAILED',
+            'error' => 'Error al comunicarse con Backblaze B2: ' . $e->getMessage(),
+            'details' => [
+                'storagePath' => $storagePath,
+                'bucket' => $B2_BUCKET_NAME,
+                'file_name' => $uploadedFile['name'] ?? '',
+                'file_size' => $uploadedFile['size'] ?? 0
+            ]
+        ]);
+        exit;
+    }
+}
+
+if ($method === 'GET' && $path === 'storage/signed-url') {
+    $storagePath = $_GET['path'] ?? ($_GET['storagePath'] ?? '');
+    if (empty($storagePath)) {
+        http_response_code(400);
+        echo json_encode([
+            'success' => false,
+            'error' => 'Parámetro "path" es requerido.'
+        ]);
+        exit;
+    }
+
+    try {
+        $authData = b2AuthorizeAccount($B2_KEY_ID, $B2_APPLICATION_KEY);
+        $downloadUrl = $authData['downloadUrl'];
+        $publicUrl = "{$downloadUrl}/file/{$B2_BUCKET_NAME}/" . ltrim($storagePath, '/');
+
+        echo json_encode([
+            'success' => true,
+            'url' => $publicUrl,
+            'storagePath' => $storagePath,
+            'bucket' => $B2_BUCKET_NAME
+        ]);
+    } catch (Exception $e) {
+        http_response_code(502);
+        echo json_encode([
+            'success' => false,
+            'error' => $e->getMessage()
+        ]);
+    }
+    exit;
+}
+
+// ==============================================================================
+// 4. AUTENTICACIÓN SERVER-TO-SERVER (N8N / SOCIAL / PUBLISHING)
+// ==============================================================================
+// Extraer Bearer token
+$providedKey = $customKeyHeader;
+if (empty($providedKey) && strpos($authHeader, 'Bearer ') === 0) {
+    $providedKey = trim(substr($authHeader, 7));
+}
+
+$expectedKey = getenv('AURASOCIAL_N8N_API_KEY') ?: $DEFAULT_N8N_KEY;
+if (empty($providedKey) || $providedKey !== $expectedKey) {
+    http_response_code(401);
+    echo json_encode([
+        'success' => false,
+        'error' => 'UNAUTHORIZED: Credencial de autenticación n8n server-to-server inválida o ausente.'
+    ]);
+    exit;
+}
+
+if (empty($workspaceId)) {
+    http_response_code(400);
+    echo json_encode([
+        'success' => false,
+        'error' => 'BAD_REQUEST: x-workspace-id es obligatorio para aislar el contexto del tenant.'
+    ]);
+    exit;
+}
+
+// ==============================================================================
+// 5. ROUTING DE SOCIAL Y PUBLISHING
+// ==============================================================================
 if ($method === 'GET' && $path === 'social/providers/health') {
     echo json_encode([
         'success' => true,

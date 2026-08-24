@@ -44,6 +44,21 @@ export interface ValidationGateResult {
   metadata?: Partial<RenderOutputMetadata>;
 }
 
+export interface MissingMediaDetail {
+  scene_number: number;
+  slot_id?: string;
+  reason: 'missing_asset' | 'missing_storage_path' | 'empty_storage_path' | 'invalid_duration';
+  message: string;
+}
+
+export interface RenderMediaValidationResult {
+  can_render: boolean;
+  code: 'RENDER_MEDIA_VALID' | 'RENDER_MEDIA_REQUIRED';
+  errors: string[];
+  missing_slots: MissingMediaDetail[];
+  summary_message: string;
+}
+
 export interface RenderJob {
   id: string;
   workspace_id: string;

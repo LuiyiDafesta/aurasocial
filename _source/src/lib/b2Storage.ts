@@ -7,6 +7,7 @@ export const B2_CONFIG = {
   bucketName: import.meta.env.VITE_B2_BUCKET_NAME || 'AuraSocial',
   keyId: import.meta.env.VITE_B2_KEY_ID || '00429a18a8ece8c000000000b',
   applicationKey: import.meta.env.VITE_B2_APPLICATION_KEY || 'K004Txy/pW8Z+i+3lNZZA1vobRMdTvc',
+  apiGatewayUrl: import.meta.env.VITE_API_GATEWAY_URL || '',
 };
 
 export const b2Client = new S3Client({
@@ -19,14 +20,67 @@ export const b2Client = new S3Client({
 });
 
 /**
+ * Sube un archivo mediante el Proxy PHP de AuraSocial (Server-to-Server B2).
+ * Evita bloqueos de CORS y asegura compatibilidad con hosting compartido (Ferozo).
+ */
+export async function uploadToB2ViaProxy(
+  fileData: Blob | File,
+  storagePath: string,
+  contentType: string
+): Promise<{ storagePath: string; bucket: string; publicUrl?: string; fileId?: string }> {
+  const formData = new FormData();
+  const filename = (fileData as File).name || 'asset_file';
+  formData.append('file', fileData, filename);
+  formData.append('storagePath', storagePath);
+  formData.append('contentType', contentType);
+
+  const endpoint = B2_CONFIG.apiGatewayUrl
+    ? `${B2_CONFIG.apiGatewayUrl.replace(/\/$/, '')}/api/storage/upload`
+    : '/api/storage/upload';
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const errorJson = await response.json().catch(() => ({}));
+    const message = errorJson.error || `Error del proxy de almacenamiento PHP (HTTP ${response.status})`;
+    throw new Error(message);
+  }
+
+  const result = await response.json();
+  if (!result.success) {
+    throw new Error(result.error || 'Error al procesar la subida en el proxy de Backblaze B2');
+  }
+
+  return {
+    storagePath: result.data?.storagePath || storagePath,
+    bucket: result.data?.bucket || B2_CONFIG.bucketName,
+    publicUrl: result.data?.publicUrl,
+    fileId: result.data?.fileId,
+  };
+}
+
+/**
  * Sube un archivo o blob directamente a Backblaze B2.
+ * En navegador intenta primero el Proxy PHP para evitar CORS y fallbacks a S3 directo.
  */
 export async function uploadToB2(
   fileData: Blob | Uint8Array | ArrayBuffer | string,
   storagePath: string,
   contentType: string
-): Promise<{ storagePath: string; bucket: string }> {
-  // Convertir a Uint8Array si es Blob/File en navegador
+): Promise<{ storagePath: string; bucket: string; publicUrl?: string; fileId?: string }> {
+  // 1. Si estamos en el navegador y el dato es Blob o File, utilizar el proxy PHP Server-to-Server
+  if (typeof window !== 'undefined' && typeof Blob !== 'undefined' && fileData instanceof Blob) {
+    try {
+      return await uploadToB2ViaProxy(fileData, storagePath, contentType);
+    } catch (proxyError: any) {
+      console.warn('Proxy PHP falló o no disponible, intentando subida directa S3:', proxyError?.message);
+    }
+  }
+
+  // 2. Fallback directo S3 Client (útil para Node.js, CLI scripts o entornos sin proxy)
   let body: any = fileData;
   if (typeof Blob !== 'undefined' && fileData instanceof Blob) {
     body = new Uint8Array(await fileData.arrayBuffer());
@@ -44,6 +98,7 @@ export async function uploadToB2(
   return {
     storagePath,
     bucket: B2_CONFIG.bucketName,
+    publicUrl: `https://f004.backblazeb2.com/file/${B2_CONFIG.bucketName}/${storagePath}`,
   };
 }
 
@@ -56,12 +111,17 @@ export async function getB2SignedUrl(
 ): Promise<string> {
   if (!storagePath) return '';
 
-  const command = new GetObjectCommand({
-    Bucket: B2_CONFIG.bucketName,
-    Key: storagePath,
-  });
+  try {
+    const command = new GetObjectCommand({
+      Bucket: B2_CONFIG.bucketName,
+      Key: storagePath,
+    });
 
-  return getSignedUrl(b2Client, command, { expiresIn: expiresInSeconds });
+    return await getSignedUrl(b2Client, command, { expiresIn: expiresInSeconds });
+  } catch (err) {
+    console.warn('Error al generar Signed URL directa S3, usando URL pública B2:', err);
+    return `https://f004.backblazeb2.com/file/${B2_CONFIG.bucketName}/${storagePath}`;
+  }
 }
 
 /**
@@ -77,3 +137,4 @@ export async function deleteFromB2(storagePath: string): Promise<void> {
 
   await b2Client.send(command);
 }
+

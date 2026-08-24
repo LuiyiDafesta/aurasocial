@@ -11,7 +11,8 @@ import {
   createRenderJob, 
   getRenderJob, 
   getRenderJobsForAdaptation, 
-  approveRender 
+  approveRender,
+  validateMediaForRender
 } from '../../services/renderJobService';
 import { validatePlatformTexts } from '../../services/platformTextValidator';
 import { Button } from '../common/Button';
@@ -183,12 +184,22 @@ export function PlatformAdaptationView({
     }
   };
 
+  const renderPackage = buildRenderPackage(adaptation);
+  const mediaValidation = useMemo(() => {
+    return validateMediaForRender(adaptation);
+  }, [adaptation]);
+
   const handleTriggerRender = async () => {
+    if (!mediaValidation.can_render) {
+      toast(`Faltan medios para renderizar: ${mediaValidation.summary_message}`, { type: 'error' });
+      return;
+    }
+
     try {
       setIsStartingRender(true);
       const job = await createRenderJob(adaptation.id);
       setActiveJob(job);
-      toast('Render Job iniciado. Procesando con FFmpeg...', { type: 'success' });
+      toast('Render Job iniciado. Procesando...', { type: 'success' });
     } catch (err: any) {
       console.error('Error al iniciar render:', err);
       toast(`Error al iniciar render: ${err.message}`, { type: 'error' });
@@ -210,7 +221,6 @@ export function PlatformAdaptationView({
     }
   };
 
-  const renderPackage = buildRenderPackage(adaptation);
   const isApproved = adaptation.readiness_status === 'approved';
   const isRendered = adaptation.render_status === 'rendered' || activeJob?.status === 'completed';
   const isRendering = activeJob && ['queued', 'preparing', 'rendering', 'validating', 'uploading'].includes(activeJob.status);
@@ -505,15 +515,37 @@ export function PlatformAdaptationView({
                 </div>
               )}
 
+              {/* Missing Media Quality Guard Alert */}
+              {!mediaValidation.can_render && (
+                <div className="p-3.5 rounded-2xl bg-amber-950/30 border border-amber-800/40 space-y-1 text-xs">
+                  <div className="font-bold text-amber-300 flex items-center gap-1.5">
+                    <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+                    Faltan medios para renderizar ({mediaValidation.missing_slots.length || mediaValidation.errors.length})
+                  </div>
+                  <p className="text-[11px] text-amber-200/90">
+                    {mediaValidation.summary_message}
+                  </p>
+                  {mediaValidation.missing_slots.length > 0 && (
+                    <ul className="list-disc list-inside space-y-0.5 text-amber-300/80 text-[11px] font-mono pt-1">
+                      {mediaValidation.missing_slots.map((s, idx) => (
+                        <li key={idx}>{s.message}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+
               {/* Render Actions Toolbar */}
               <div className="flex items-center gap-2.5 flex-wrap pt-1">
                 <Button
                   variant="primary"
                   size="sm"
+                  disabled={!mediaValidation.can_render || Boolean(isStartingRender || isRendering)}
                   isLoading={Boolean(isStartingRender || isRendering)}
                   onClick={handleTriggerRender}
                   leftIcon={<Video className="w-4 h-4" />}
-                  className="bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs"
+                  className="bg-purple-600 hover:bg-purple-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold text-xs"
+                  title={!mediaValidation.can_render ? mediaValidation.summary_message : 'Generar render MP4'}
                 >
                   {isRendered ? 'Re-Renderizar Video' : 'Renderizar Video MP4'}
                 </Button>

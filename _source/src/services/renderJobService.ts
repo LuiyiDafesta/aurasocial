@@ -1,8 +1,125 @@
 import { supabase } from '../lib/supabase';
-import { RenderJob, RenderJobStatus } from '../types/renderJob';
+import { 
+  RenderJob, 
+  RenderJobStatus, 
+  RenderMediaValidationResult, 
+  MissingMediaDetail 
+} from '../types/renderJob';
 import { PlatformAdaptation } from '../types/platformAdaptation';
 import { getPlatformAdaptation, buildRenderPackage } from './platformAdaptationService';
 import { getB2SignedUrl } from '../lib/b2Storage';
+
+/**
+ * Quality Guard para Render Jobs (Fase 12E.1):
+ * Valida de forma estricta que la adaptación contenga escenas y que cada slot/escena requerida
+ * tenga un asset asignado con una ruta de almacenamiento (storage_path) válida en Backblaze B2.
+ */
+export function validateMediaForRender(
+  adaptation: PlatformAdaptation | null | undefined
+): RenderMediaValidationResult {
+  if (!adaptation) {
+    return {
+      can_render: false,
+      code: 'RENDER_MEDIA_REQUIRED',
+      errors: ['La adaptación no existe o es inválida.'],
+      missing_slots: [{ scene_number: 1, reason: 'missing_asset', message: 'Adaptación inexistente o inválida.' }],
+      summary_message: 'Faltan medios para renderizar: Adaptación inexistente.',
+    };
+  }
+
+  const scenes = Array.isArray(adaptation.scene_mappings) ? adaptation.scene_mappings : [];
+  const errors: string[] = [];
+  const missing_slots: MissingMediaDetail[] = [];
+
+  // 1. Validar existencia de escenas
+  if (scenes.length === 0) {
+    errors.push('La adaptación no tiene escenas definidas ni slots multimedia asignados.');
+    missing_slots.push({
+      scene_number: 1,
+      reason: 'missing_asset',
+      message: 'Sin escenas configuradas: La adaptación no tiene slots multimedia mapeados.',
+    });
+    return {
+      can_render: false,
+      code: 'RENDER_MEDIA_REQUIRED',
+      errors,
+      missing_slots,
+      summary_message: 'Faltan medios para renderizar: La adaptación no contiene escenas ni slots multimedia configurados.',
+    };
+  }
+
+  // 2. Validar cada escena y slot multimedia requerido
+  for (let i = 0; i < scenes.length; i++) {
+    const scene = scenes[i];
+    const sceneNum = scene.scene_number || i + 1;
+    const slotId = (scene as any).slot_id || `slot_sc${sceneNum}_01`;
+
+    // Validar asignación de asset
+    if (!scene.asset_id || typeof scene.asset_id !== 'string' || !scene.asset_id.trim()) {
+      errors.push(`Escena ${sceneNum}: No tiene asset multimedia asignado.`);
+      missing_slots.push({
+        scene_number: sceneNum,
+        slot_id: slotId,
+        reason: 'missing_asset',
+        message: `Escena ${sceneNum} (${slotId}): Falta asignar archivo de video/foto.`,
+      });
+    }
+
+    // Validar storage_path
+    if (!scene.storage_path || typeof scene.storage_path !== 'string' || !scene.storage_path.trim()) {
+      errors.push(`Escena ${sceneNum}: Ruta de almacenamiento vacía o inexistente (storage_path).`);
+      missing_slots.push({
+        scene_number: sceneNum,
+        slot_id: slotId,
+        reason: 'empty_storage_path',
+        message: `Escena ${sceneNum} (${slotId}): Ruta de almacenamiento en Backblaze B2 no válida o vacía.`,
+      });
+    }
+
+    // Validar duración
+    const duration = Number(scene.duration_seconds);
+    if (isNaN(duration) || duration <= 0) {
+      errors.push(`Escena ${sceneNum}: Duración inválida (${scene.duration_seconds}s).`);
+      missing_slots.push({
+        scene_number: sceneNum,
+        slot_id: slotId,
+        reason: 'invalid_duration',
+        message: `Escena ${sceneNum} (${slotId}): La duración debe ser mayor a 0 segundos.`,
+      });
+    }
+  }
+
+  // 3. Validar RenderPackage Snapshot
+  const renderPackage = buildRenderPackage(adaptation);
+  if (!renderPackage.media_assets || renderPackage.media_assets.length === 0) {
+    if (errors.length === 0) {
+      errors.push('El paquete de render no contiene ningún media asset reproducible.');
+      missing_slots.push({
+        scene_number: 1,
+        reason: 'missing_asset',
+        message: 'Paquete de render sin media assets válidos.',
+      });
+    }
+  }
+
+  if (renderPackage.duration_seconds <= 0) {
+    if (errors.length === 0) {
+      errors.push('La duración total estimada del video es 0 segundos.');
+    }
+  }
+
+  const canRender = errors.length === 0 && missing_slots.length === 0;
+
+  return {
+    can_render: canRender,
+    code: canRender ? 'RENDER_MEDIA_VALID' : 'RENDER_MEDIA_REQUIRED',
+    errors,
+    missing_slots,
+    summary_message: canRender
+      ? 'Todos los assets y slots multimedia están correctamente configurados.'
+      : `Faltan medios para renderizar (${missing_slots.length} observación/es): ${errors.join('; ')}`,
+  };
+}
 
 /**
  * Consulta un Render Job por su ID y actualiza URLs firmadas si está completado.
@@ -67,6 +184,7 @@ export async function getRenderJobsForAdaptation(adaptationId: string): Promise<
 
 /**
  * Crea o recupera un Render Job con snapshot inmutable y despacha el worker determinista.
+ * Quality Guard Fase 12E.1: Impide estrictamente la creación de jobs sin media válido.
  */
 export async function createRenderJob(
   adaptationId: string,
@@ -77,7 +195,18 @@ export async function createRenderJob(
     throw new Error(`Adaptación ${adaptationId} no encontrada.`);
   }
 
-  // 1. Verificar idempotencia: buscar si ya hay un job en curso
+  // 1. QUALITY GUARD OBLIGATORIO: Validar que todos los slots requeridos tengan media con storage_path
+  const mediaValidation = validateMediaForRender(adaptation);
+  if (!mediaValidation.can_render) {
+    const err: any = new Error(
+      `RENDER_MEDIA_REQUIRED: No se puede crear el Render Job. ${mediaValidation.summary_message}`
+    );
+    err.code = 'RENDER_MEDIA_REQUIRED';
+    err.details = mediaValidation;
+    throw err;
+  }
+
+  // 2. Verificar idempotencia: buscar si ya hay un job en curso
   const activeStatuses: RenderJobStatus[] = ['queued', 'preparing', 'rendering', 'validating', 'uploading'];
   const { data: existingActive } = await supabase
     .from('render_jobs')
@@ -91,10 +220,10 @@ export async function createRenderJob(
     return existingActive[0] as RenderJob;
   }
 
-  // 2. Snapshot inmutable del RenderPackage (Fase 9C Contract)
+  // 3. Snapshot inmutable del RenderPackage (Fase 9C Contract)
   const renderPackageSnapshot = buildRenderPackage(adaptation);
 
-  // 3. Crear registro de Render Job
+  // 4. Crear registro de Render Job
   const payload = {
     workspace_id: adaptation.workspace_id,
     brand_id: adaptation.brand_id,
