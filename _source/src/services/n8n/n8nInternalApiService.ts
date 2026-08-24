@@ -243,10 +243,15 @@ export class N8NInternalApiService {
     }
 
     // 3. Buscar la cuenta descubierta por provider_account_id o id
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(providerAccountId);
+    const filterCondition = isUuid
+      ? `id.eq.${providerAccountId},provider_account_id.eq.${providerAccountId},account_id.eq.${providerAccountId}`
+      : `provider_account_id.eq.${providerAccountId},account_id.eq.${providerAccountId}`;
+
     const { data: connections, error: connErr } = await supabase
       .from('social_connections')
       .select('*')
-      .or(`provider_account_id.eq.${providerAccountId},account_id.eq.${providerAccountId},id.eq.${providerAccountId}`);
+      .or(filterCondition);
 
     if (connErr || !connections || connections.length === 0) {
       return { success: false, error: `ACCOUNT_NOT_FOUND: Cuenta social '${providerAccountId}' no encontrada como cuenta descubierta en el sistema.` };

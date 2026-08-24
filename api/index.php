@@ -260,7 +260,12 @@ if ($method === 'POST' && $path === 'social/accounts/bind') {
         "Content-Type: application/json"
     ];
 
-    $queryUrl = "{$SUPABASE_URL}/rest/v1/social_connections?or=(provider_account_id.eq.{$providerAccountId},account_id.eq.{$providerAccountId},id.eq.{$providerAccountId})&select=*";
+    $isUuid = preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', $providerAccountId);
+    $filter = $isUuid 
+        ? "or=(id.eq.{$providerAccountId},provider_account_id.eq.{$providerAccountId},account_id.eq.{$providerAccountId})"
+        : "or=(provider_account_id.eq.{$providerAccountId},account_id.eq.{$providerAccountId})";
+
+    $queryUrl = "{$SUPABASE_URL}/rest/v1/social_connections?{$filter}&select=*";
     $connRes = makeRequest($queryUrl, 'GET', $supaHeaders);
 
     $connections = (is_array($connRes['body'])) ? $connRes['body'] : [];
