@@ -4,10 +4,13 @@ Este documento detalla el procedimiento para compilar y desplegar la aplicación
 
 ---
 
-## 1. Estructura del Repositorio
+## 1. Estructura del Repositorio para Producción
 
-- **`_source/`**: Contiene el código fuente completo del frontend (React + TypeScript + Vite + Tailwind CSS).
-- **`.htaccess`**: Archivo de configuración en la raíz que maneja el enrutamiento de la SPA (redirección a `index.html` para que no existan errores 404 al recargar rutas).
+- **`index.html`**: Archivo de entrada de la aplicación SPA en la raíz del servidor web (`public_html/`).
+- **`assets/`**: Chunks compilados de JavaScript y CSS optimizados para producción.
+- **`api/index.php`**: Gateway PHP Server-to-Server para orquestación con **n8n** y endpoints de integración con **Socialit** (`/api/social/accounts/sync`, `/api/social/accounts/bind`, `/api/social/publish`, etc.).
+- **`.htaccess`**: Archivo de configuración en la raíz que maneja el enrutamiento de la SPA y redirige peticiones `/api/...` y `/webhook/...` al Gateway PHP.
+- **`_source/`**: Código fuente de desarrollo (React + TypeScript + Vite + Tailwind CSS).
 
 ---
 
@@ -18,46 +21,45 @@ Este documento detalla el procedimiento para compilar y desplegar la aplicación
 
 ---
 
-## 3. Procedimiento de Compilación
+## 3. Procedimiento de Compilación y Publicación
 
-1. Abre una terminal y dirígete a la carpeta `_source/`:
+1. Abrí una terminal y dirígete a la carpeta `_source/`:
    ```bash
    cd _source
    ```
 
-2. Instala las dependencias (solo la primera vez o tras añadir nuevos paquetes):
+2. Instalá las dependencias (solo la primera vez o tras añadir paquetes):
    ```bash
    npm install
    ```
 
-3. Configura tus variables de entorno en `_source/.env`:
-   ```env
-   VITE_SUPABASE_URL=https://eeykrgnwfarrljkotvmw.supabase.co
-   VITE_SUPABASE_ANON_KEY=tu-anon-key-de-supabase
-   VITE_APP_TIMEZONE=America/Argentina/Buenos_Aires
-   ```
-
-4. Ejecuta la compilación de producción:
+3. Ejecutá la compilación de producción:
    ```bash
    npm run build
    ```
+   *Vite compilará automáticamente los assets y actualizará `index.html` y `assets/` directamente en la raíz del proyecto.*
 
-   Este comando generará la carpeta compilada `_source/dist/` con todos los archivos HTML, CSS, JavaScript y assets listos para producción.
+4. Subí los cambios a GitHub para sincronizar con Ferozo:
+   ```bash
+   git add -A
+   git commit -m "deploy: update production build and api gateway"
+   git push origin main
+   ```
 
 ---
 
-## 4. Procedimiento de Subida a Ferozo
+## 4. Endpoints Disponibles en Ferozo
 
-1. Conéctate a tu hosting Ferozo vía FTP (o mediante el Administrador de Archivos del panel cPanel/Ferozo).
-2. Ubícate en la raíz pública del dominio (usualmente `public_html/` o `httpdocs/`).
-3. Sube:
-   - Todo el **contenido** generado dentro de `_source/dist/` (`index.html`, `assets/`, `favicon.ico`, etc.).
-   - El archivo **`.htaccess`** que se encuentra en la raíz del repositorio.
+- `POST https://aurasocial.lsnethub.com/webhook/aurasocial/social/sync` (Webhook de sincronización)
+- `POST https://aurasocial.lsnethub.com/api/social/accounts/sync` (Discovery de cuentas)
+- `POST https://aurasocial.lsnethub.com/api/social/accounts/bind` (Binding idempotente de marca)
+- `POST https://aurasocial.lsnethub.com/api/social/publish` (Publicación Dry Run)
+- `GET  https://aurasocial.lsnethub.com/api/social/providers/health` (Estado de salud de proveedores)
 
 ---
 
 ## 5. Verificación en Producción
 
-1. Ingresa a la URL de tu dominio (ej. `https://tu-dominio.com/`).
-2. Navega a una subruta (ej. `https://tu-dominio.com/contenidos`).
-3. Recarga la página con `Ctrl + F5`: gracias a la regla de `.htaccess`, la página debe cargar limpiamente sin mostrar error 404 de Apache ni pantalla en blanco.
+1. Ingresá a la URL de tu dominio: `https://aurasocial.lsnethub.com/`.
+2. Presioná `Ctrl + F5` para invalidar la caché del navegador.
+3. Navegá a **Canales y Redes** para gestionar las cuentas conectadas y disparar la sincronización con n8n.
