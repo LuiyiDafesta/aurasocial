@@ -108,8 +108,8 @@ export class N8nOrchestratorService {
       ? (process.env.N8N_SOCIAL_PUBLISH_WEBHOOK_URL || process.env.VITE_N8N_SOCIAL_PUBLISH_WEBHOOK_URL)
       : undefined;
 
-    this.defaultWebhookUrl = envWebhook || 'https://aurasocial.lsnethub.com/webhook/aurasocial/social/sync';
-    this.defaultPublishWebhookUrl = envPublishWebhook || 'https://aurasocial.lsnethub.com/webhook/aurasocial/social/publish';
+    this.defaultWebhookUrl = envWebhook || 'https://flow1.lsnetinformatica.com.ar/webhook/aurasocial/social/sync';
+    this.defaultPublishWebhookUrl = envPublishWebhook || 'https://flow1.lsnetinformatica.com.ar/webhook/aurasocial/social/publish';
     this.serverKey = (typeof process !== 'undefined' && process.env && process.env.AURASOCIAL_N8N_API_KEY) ||
       'aura_n8n_live_sec_99a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4';
   }

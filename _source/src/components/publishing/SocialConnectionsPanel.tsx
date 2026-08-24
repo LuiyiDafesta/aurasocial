@@ -463,7 +463,7 @@ export function SocialConnectionsPanel({
               />
             ) : (
               <code className="text-purple-300 font-mono text-[11px] truncate bg-purple-950/40 px-2 py-0.5 rounded border border-purple-800/40">
-                {n8nWebhookUrl || 'https://aurasocial.lsnethub.com/webhook/aurasocial/social/sync (Ferozo Gateway)'}
+                {n8nWebhookUrl || 'https://flow1.lsnetinformatica.com.ar/webhook/aurasocial/social/sync'}
               </code>
             )}
           </div>
