@@ -22,6 +22,7 @@ import { extractMediaSlotsFromScenes } from './mediaSlotService';
 import { planMediaForContent } from './mediaPlannerService';
 import { composeAndRenderAdaptation } from './renderService';
 import { getSignedAssetUrl } from './contentAssetService';
+import { getB2CdnUrl } from '../lib/b2Storage';
 
 export const DEFAULT_PLATFORM_CONFIGS: Array<{
   platform: TargetPlatform;
@@ -668,7 +669,7 @@ export async function updateAdaptationSceneAsset(
     try {
       assetUrl = await getSignedAssetUrl(asset.storage_path);
     } catch {
-      assetUrl = `https://f004.backblazeb2.com/file/${asset.storage_bucket || 'AuraSocial'}/${asset.storage_path}`;
+      assetUrl = getB2CdnUrl(asset.storage_path);
     }
   }
 

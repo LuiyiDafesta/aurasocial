@@ -1,5 +1,4 @@
-import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 
 export const B2_CONFIG = {
   endpoint: import.meta.env.VITE_B2_ENDPOINT || 'https://s3.us-west-004.backblazeb2.com',
@@ -8,6 +7,7 @@ export const B2_CONFIG = {
   keyId: import.meta.env.VITE_B2_KEY_ID || '00429a18a8ece8c000000000b',
   applicationKey: import.meta.env.VITE_B2_APPLICATION_KEY || 'K004Txy/pW8Z+i+3lNZZA1vobRMdTvc',
   apiGatewayUrl: import.meta.env.VITE_API_GATEWAY_URL || '',
+  cdnBaseUrl: import.meta.env.VITE_B2_CDN_URL || 'https://cdnsocial.lsnethub.com',
 };
 
 export const b2Client = new S3Client({
@@ -20,6 +20,17 @@ export const b2Client = new S3Client({
 });
 
 /**
+ * Resuelve la URL optimizada de Cloudflare CDN (Bandwidth Alliance) para descarga/streaming
+ * a $0 de costo de egress bandwidth desde Backblaze B2.
+ */
+export function getB2CdnUrl(storagePath: string): string {
+  if (!storagePath) return '';
+  const cleanPath = storagePath.replace(/^\/+/, '');
+  const cdnHost = (B2_CONFIG.cdnBaseUrl || 'https://cdnsocial.lsnethub.com').replace(/\/+$/, '');
+  return `${cdnHost}/${cleanPath}`;
+}
+
+/**
  * Sube un archivo mediante el Proxy PHP de AuraSocial (Server-to-Server B2).
  * Evita bloqueos de CORS y asegura compatibilidad con hosting compartido (Ferozo).
  */
@@ -28,10 +39,11 @@ export async function uploadToB2ViaProxy(
   storagePath: string,
   contentType: string
 ): Promise<{ storagePath: string; bucket: string; publicUrl?: string; fileId?: string }> {
+  const cleanPath = storagePath.replace(/^\/+/, '');
   const formData = new FormData();
   const filename = (fileData as File).name || 'asset_file';
   formData.append('file', fileData, filename);
-  formData.append('storagePath', storagePath);
+  formData.append('storagePath', cleanPath);
   formData.append('contentType', contentType);
 
   const endpoint = B2_CONFIG.apiGatewayUrl
@@ -55,9 +67,9 @@ export async function uploadToB2ViaProxy(
   }
 
   return {
-    storagePath: result.data?.storagePath || storagePath,
+    storagePath: result.data?.storagePath || cleanPath,
     bucket: result.data?.bucket || B2_CONFIG.bucketName,
-    publicUrl: result.data?.publicUrl,
+    publicUrl: getB2CdnUrl(cleanPath),
     fileId: result.data?.fileId,
   };
 }
@@ -71,6 +83,8 @@ export async function uploadToB2(
   storagePath: string,
   contentType: string
 ): Promise<{ storagePath: string; bucket: string; publicUrl?: string; fileId?: string }> {
+  const cleanPath = storagePath.replace(/^\/+/, '');
+
   // 1. Si estamos en el navegador y el dato es Blob o File, utilizar el proxy PHP Server-to-Server
   if (typeof window !== 'undefined' && typeof Blob !== 'undefined' && fileData instanceof Blob) {
     try {
@@ -88,7 +102,7 @@ export async function uploadToB2(
 
   const command = new PutObjectCommand({
     Bucket: B2_CONFIG.bucketName,
-    Key: storagePath,
+    Key: cleanPath,
     Body: body,
     ContentType: contentType,
   });
@@ -96,32 +110,21 @@ export async function uploadToB2(
   await b2Client.send(command);
 
   return {
-    storagePath,
+    storagePath: cleanPath,
     bucket: B2_CONFIG.bucketName,
-    publicUrl: `https://f004.backblazeb2.com/file/${B2_CONFIG.bucketName}/${storagePath}`,
+    publicUrl: getB2CdnUrl(cleanPath),
   };
 }
 
 /**
- * Genera una URL firmada de lectura para un objeto en Backblaze B2.
+ * Genera una URL optimizada vía Cloudflare CDN para descarga y streaming sin costo de egress.
  */
 export async function getB2SignedUrl(
   storagePath: string,
-  expiresInSeconds = 3600
+  _expiresInSeconds = 3600
 ): Promise<string> {
   if (!storagePath) return '';
-
-  try {
-    const command = new GetObjectCommand({
-      Bucket: B2_CONFIG.bucketName,
-      Key: storagePath,
-    });
-
-    return await getSignedUrl(b2Client, command, { expiresIn: expiresInSeconds });
-  } catch (err) {
-    console.warn('Error al generar Signed URL directa S3, usando URL pública B2:', err);
-    return `https://f004.backblazeb2.com/file/${B2_CONFIG.bucketName}/${storagePath}`;
-  }
+  return getB2CdnUrl(storagePath);
 }
 
 /**
@@ -130,11 +133,11 @@ export async function getB2SignedUrl(
 export async function deleteFromB2(storagePath: string): Promise<void> {
   if (!storagePath) return;
 
+  const cleanPath = storagePath.replace(/^\/+/, '');
   const command = new DeleteObjectCommand({
     Bucket: B2_CONFIG.bucketName,
-    Key: storagePath,
+    Key: cleanPath,
   });
 
   await b2Client.send(command);
 }
-

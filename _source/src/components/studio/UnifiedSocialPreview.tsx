@@ -15,6 +15,7 @@ import {
   Sparkles,
   MoveVertical
 } from 'lucide-react';
+import { getB2CdnUrl } from '../../lib/b2Storage';
 
 interface UnifiedSocialPreviewProps {
   publicationPackage: PublicationPackage;
@@ -49,7 +50,7 @@ export function UnifiedSocialPreview({
   // 2. Determinar la URL del recurso multimedia (video o foto)
   let mediaUrl = currentScene?.asset_url;
   if (!mediaUrl && currentScene?.storage_path) {
-    mediaUrl = `https://f004.backblazeb2.com/file/AuraSocial/${currentScene.storage_path}`;
+    mediaUrl = getB2CdnUrl(currentScene.storage_path);
   }
   if (!mediaUrl) {
     mediaUrl = pkg.media?.render_url;

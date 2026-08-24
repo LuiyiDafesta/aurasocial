@@ -29,11 +29,12 @@ $SUPABASE_URL = getenv('VITE_SUPABASE_URL') ?: 'https://eeykrgnwfarrljkotvmw.sup
 $SUPABASE_SERVICE_ROLE = getenv('SUPABASE_SERVICE_ROLE_KEY') ?: '';
 $SOCIALIT_API_URL = getenv('SOCIALIT_API_URL') ?: 'https://api.socialit.com';
 
-// Configuración de Backblaze B2 S3 / Native API
+// Configuración de Backblaze B2 S3 / Native API & Cloudflare CDN Alliance
 $B2_KEY_ID = getenv('B2_KEY_ID') ?: (getenv('VITE_B2_KEY_ID') ?: '00429a18a8ece8c000000000b');
 $B2_APPLICATION_KEY = getenv('B2_APPLICATION_KEY') ?: (getenv('VITE_B2_APPLICATION_KEY') ?: 'K004Txy/pW8Z+i+3lNZZA1vobRMdTvc');
 $B2_BUCKET_ID = getenv('B2_BUCKET_ID') ?: (getenv('VITE_B2_BUCKET_ID') ?: '32895a1118da28beac0e081c');
 $B2_BUCKET_NAME = getenv('B2_BUCKET_NAME') ?: (getenv('VITE_B2_BUCKET_NAME') ?: 'AuraSocial');
+$B2_CDN_URL = getenv('B2_CDN_URL') ?: (getenv('VITE_B2_CDN_URL') ?: 'https://cdnsocial.lsnethub.com');
 
 // 1. Obtener headers y body de la petición
 $headers = getallheaders();
@@ -293,21 +294,23 @@ if ($method === 'POST' && ($path === 'storage/upload' || $path === 'media/upload
             $contentType
         );
 
-        $publicUrl = "{$downloadUrl}/file/{$B2_BUCKET_NAME}/{$storagePath}";
+        $cleanStoragePath = ltrim($storagePath, '/');
+        $publicUrl = rtrim($B2_CDN_URL, '/') . '/' . $cleanStoragePath;
 
         echo json_encode([
             'success' => true,
-            'message' => 'Archivo subido exitosamente a Backblaze B2.',
+            'message' => 'Archivo subido exitosamente a Backblaze B2 vía Cloudflare CDN.',
             'data' => [
-                'storagePath' => $storagePath,
-                'storage_path' => $storagePath,
+                'storagePath' => $cleanStoragePath,
+                'storage_path' => $cleanStoragePath,
                 'bucket' => $B2_BUCKET_NAME,
                 'fileId' => $uploadResult['fileId'] ?? null,
-                'fileName' => $uploadResult['fileName'] ?? $storagePath,
+                'fileName' => $uploadResult['fileName'] ?? $cleanStoragePath,
                 'contentLength' => $uploadResult['contentLength'] ?? $uploadedFile['size'],
                 'contentType' => $contentType,
                 'contentSha1' => $uploadResult['contentSha1'] ?? null,
                 'publicUrl' => $publicUrl,
+                'cdnUrl' => $publicUrl,
                 'uploaded_at' => gmdate('Y-m-d\TH:i:s\Z')
             ]
         ]);
@@ -341,14 +344,14 @@ if ($method === 'GET' && $path === 'storage/signed-url') {
     }
 
     try {
-        $authData = b2AuthorizeAccount($B2_KEY_ID, $B2_APPLICATION_KEY);
-        $downloadUrl = $authData['downloadUrl'];
-        $publicUrl = "{$downloadUrl}/file/{$B2_BUCKET_NAME}/" . ltrim($storagePath, '/');
+        $cleanStoragePath = ltrim($storagePath, '/');
+        $publicUrl = rtrim($B2_CDN_URL, '/') . '/' . $cleanStoragePath;
 
         echo json_encode([
             'success' => true,
             'url' => $publicUrl,
-            'storagePath' => $storagePath,
+            'cdnUrl' => $publicUrl,
+            'storagePath' => $cleanStoragePath,
             'bucket' => $B2_BUCKET_NAME
         ]);
     } catch (Exception $e) {
