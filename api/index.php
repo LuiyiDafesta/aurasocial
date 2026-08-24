@@ -65,9 +65,15 @@ if (empty($workspaceId)) {
 
 // 4. Parsear URI y método
 $requestUri = $_SERVER['REQUEST_URI'] ?? '';
-$path = parse_url($requestUri, PHP_URL_PATH);
-$path = preg_replace('#^/api/#', '', trim($path, '/'));
-$method = $_SERVER['REQUEST_METHOD'];
+$path = parse_url($requestUri, PHP_URL_PATH) ?? '';
+
+// Normalizar: remover slash inicial/final y cualquier prefijo api/ repetido
+$path = trim($path, '/');
+while (preg_match('#^api(/|$)#i', $path)) {
+    $path = preg_replace('#^api(/|$)#i', '', $path);
+    $path = trim($path, '/');
+}
+$method = strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET');
 
 $bodyRaw = file_get_contents('php://input');
 $body = json_decode($bodyRaw, true) ?: [];
