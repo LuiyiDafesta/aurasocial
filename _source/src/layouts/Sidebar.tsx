@@ -22,7 +22,7 @@ import { StatusCounts, Brand } from '../types/database';
 import { BrandSwitcher } from '../components/brands/BrandSwitcher';
 import { cn } from '../lib/utils';
 
-export type NavigationTab = 'dashboard' | 'campaigns' | 'ideas' | 'contenidos' | 'calendario' | 'analytics';
+export type NavigationTab = 'dashboard' | 'campaigns' | 'ideas' | 'contenidos' | 'social_connections' | 'calendario' | 'analytics';
 
 interface SidebarProps {
   currentTab: NavigationTab;
@@ -70,10 +70,11 @@ export function Sidebar({
   const activeAccountsCount = socialAccounts.filter((a) => a.is_connected && a.is_enabled).length;
 
   const navItems = [
-    { id: 'dashboard' as NavigationTab, label: 'Dashboard', icon: LayoutDashboard, isPlaceholder: true },
     { id: 'campaigns' as NavigationTab, label: 'Campañas', icon: Target, isPlaceholder: false },
     { id: 'ideas' as NavigationTab, label: 'Ideas', icon: Lightbulb, isPlaceholder: false },
     { id: 'contenidos' as NavigationTab, label: 'Contenidos', icon: Layers, isPlaceholder: false, isPrimary: true },
+    { id: 'social_connections' as NavigationTab, label: 'Canales y Redes', icon: Globe, isPlaceholder: false, isPrimary: false },
+    { id: 'dashboard' as NavigationTab, label: 'Dashboard', icon: LayoutDashboard, isPlaceholder: true },
     { id: 'calendario' as NavigationTab, label: 'Calendario', icon: Calendar, isPlaceholder: true },
     { id: 'analytics' as NavigationTab, label: 'Analytics', icon: BarChart3, isPlaceholder: true },
   ];
@@ -194,9 +195,14 @@ export function Sidebar({
       </div>
 
       {/* Dynamic Connected Accounts Section */}
-      <div className="px-4 py-3 border-b border-dark-800/80">
+      <div 
+        onClick={() => onSelectTab('social_connections')}
+        className="px-4 py-3 border-b border-dark-800/80 cursor-pointer hover:bg-dark-800/40 transition-all rounded-lg mx-2 my-1"
+        title="Gestionar canales sociales y sincronización con n8n / Socialit"
+      >
         <div className="flex items-center justify-between mb-2">
-          <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+          <span className="text-[11px] font-semibold text-slate-400 group-hover:text-aura-300 uppercase tracking-wider flex items-center gap-1.5">
+            <Globe className="w-3 h-3 text-aura-400" />
             Cuentas Conectadas
           </span>
           <span className="text-[11px] text-slate-400 font-medium">

@@ -12,6 +12,7 @@ import { IdeasPage } from './pages/IdeasPage';
 import { CampaignsPage } from './pages/CampaignsPage';
 import { BrandFormModal } from './components/brands/BrandFormModal';
 import { Brand } from './types/database';
+import { SocialConnectionsPanel } from './components/publishing/SocialConnectionsPanel';
 import { LayoutDashboard, Calendar, BarChart3, Loader2 } from 'lucide-react';
 
 export default function App() {
@@ -108,6 +109,24 @@ export default function App() {
             icon={Calendar}
           />
         );
+      case 'social_connections':
+        return (
+          <div className="p-8 max-w-7xl mx-auto space-y-6">
+            <div>
+              <h1 className="text-2xl font-bold text-white tracking-tight">Canales y Conexiones Sociales</h1>
+              <p className="text-sm text-slate-400 mt-1">
+                Administrá la integración con Socialit, la vinculación a marcas y la orquestación directa con n8n.
+              </p>
+            </div>
+            {currentWorkspace && (
+              <SocialConnectionsPanel
+                brandId={currentBrand?.id || ''}
+                workspaceId={currentWorkspace.id}
+                brandName={currentBrand?.name || 'Marca Activa'}
+              />
+            )}
+          </div>
+        );
       case 'analytics':
         return (
           <PlaceholderPage
@@ -139,6 +158,7 @@ export default function App() {
           currentTab === 'campaigns' ? 'Campañas' :
           currentTab === 'contenidos' ? 'Contenidos' :
           currentTab === 'ideas' ? 'Ideas' :
+          currentTab === 'social_connections' ? 'Canales y Redes Sociales' :
           currentTab === 'calendario' ? 'Calendario' :
           currentTab === 'dashboard' ? 'Dashboard' :
           'Analytics'
