@@ -41,7 +41,8 @@ import {
   Zap,
   Globe2,
   PlusCircle,
-  Unlink
+  Unlink,
+  Settings
 } from 'lucide-react';
 
 interface SocialConnectionsPanelProps {
@@ -113,6 +114,10 @@ export function SocialConnectionsPanel({
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isDiscoveringSocialit, setIsDiscoveringSocialit] = useState<boolean>(false);
   const [isSyncingN8n, setIsSyncingN8n] = useState<boolean>(false);
+  const [n8nWebhookUrl, setN8nWebhookUrl] = useState<string>(() => {
+    return (typeof window !== 'undefined' ? localStorage.getItem('aurasocial_n8n_sync_webhook_url') : null) || '';
+  });
+  const [isEditingWebhookUrl, setIsEditingWebhookUrl] = useState<boolean>(false);
   const [activeActionPlatform, setActiveActionPlatform] = useState<SocialPlatform | null>(null);
   const [busyConnectionId, setBusyConnectionId] = useState<string | null>(null);
 
@@ -171,10 +176,12 @@ export function SocialConnectionsPanel({
   const handleSyncWithN8nWorkflow = async () => {
     try {
       setIsSyncingN8n(true);
+      const targetUrl = n8nWebhookUrl.trim() || undefined;
       const result = await n8nOrchestratorService.triggerSocialSyncWorkflow({
         workspaceId,
         brandId,
         provider: 'socialit',
+        customWebhookUrl: targetUrl,
       });
 
       if (!result.success && result.error) {
@@ -437,6 +444,58 @@ export function SocialConnectionsPanel({
             <span>Publicación Real: <strong className="text-rose-400">DESACTIVADA (Kill Switch)</strong></span>
             {socialitHealth?.checked_at && (
               <span>Validado: {new Date(socialitHealth.checked_at).toLocaleTimeString()}</span>
+            )}
+          </div>
+        </div>
+
+        {/* Target n8n Webhook Configuration */}
+        <div className="flex flex-wrap items-center justify-between gap-3 text-xs p-3 rounded-xl bg-purple-950/20 border border-purple-900/30">
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <Settings className="w-4 h-4 text-purple-400 shrink-0" />
+            <span className="font-semibold text-zinc-300 shrink-0">Target n8n Webhook:</span>
+            {isEditingWebhookUrl ? (
+              <input
+                type="text"
+                value={n8nWebhookUrl}
+                onChange={(e) => setN8nWebhookUrl(e.target.value)}
+                placeholder="https://tu-n8n.com/webhook/aurasocial/social/sync"
+                className="bg-zinc-950 border border-purple-500/50 rounded px-2.5 py-1 text-white text-xs flex-1 max-w-lg focus:outline-none focus:ring-1 focus:ring-purple-400"
+              />
+            ) : (
+              <code className="text-purple-300 font-mono text-[11px] truncate bg-purple-950/40 px-2 py-0.5 rounded border border-purple-800/40">
+                {n8nWebhookUrl || 'https://aurasocial.lsnethub.com/webhook/aurasocial/social/sync (Ferozo Gateway)'}
+              </code>
+            )}
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {isEditingWebhookUrl ? (
+              <>
+                <button
+                  onClick={() => {
+                    if (typeof window !== 'undefined') {
+                      localStorage.setItem('aurasocial_n8n_sync_webhook_url', n8nWebhookUrl.trim());
+                    }
+                    setIsEditingWebhookUrl(false);
+                    toast('URL del Webhook de n8n guardada con éxito.', { type: 'success' });
+                  }}
+                  className="text-xs px-2.5 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded font-semibold transition-colors"
+                >
+                  Guardar
+                </button>
+                <button
+                  onClick={() => setIsEditingWebhookUrl(false)}
+                  className="text-xs px-2 py-1 text-zinc-400 hover:text-white"
+                >
+                  Cancelar
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => setIsEditingWebhookUrl(true)}
+                className="text-xs text-purple-400 hover:text-purple-300 underline font-medium"
+              >
+                {n8nWebhookUrl ? 'Cambiar URL de n8n' : 'Configurar URL de n8n'}
+              </button>
             )}
           </div>
         </div>
