@@ -72,8 +72,8 @@ export function Sidebar({
   const navItems = [
     { id: 'campaigns' as NavigationTab, label: 'Campañas', icon: Target, isPlaceholder: false },
     { id: 'ideas' as NavigationTab, label: 'Ideas', icon: Lightbulb, isPlaceholder: false },
-    { id: 'contenidos' as NavigationTab, label: 'Contenidos', icon: Layers, isPlaceholder: false, isPrimary: true },
-    { id: 'social_connections' as NavigationTab, label: 'Canales y Redes', icon: Globe, isPlaceholder: false, isPrimary: false },
+    { id: 'contenidos' as NavigationTab, label: 'Contenidos', icon: Layers, isPlaceholder: false },
+    { id: 'social_connections' as NavigationTab, label: 'Canales y Redes', icon: Globe, isPlaceholder: false },
     { id: 'dashboard' as NavigationTab, label: 'Dashboard', icon: LayoutDashboard, isPlaceholder: true },
     { id: 'calendario' as NavigationTab, label: 'Calendario', icon: Calendar, isPlaceholder: true },
     { id: 'analytics' as NavigationTab, label: 'Analytics', icon: BarChart3, isPlaceholder: true },
@@ -291,11 +291,6 @@ export function Sidebar({
                 />
                 <span>{item.label}</span>
               </div>
-              {item.isPrimary && (
-                <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-md bg-aura-500/20 text-aura-300 border border-aura-500/30">
-                  MVP
-                </span>
-              )}
               {item.isPlaceholder && (
                 <span className="text-[10px] text-slate-400 group-hover:text-slate-400">
                   Pronto

@@ -189,7 +189,7 @@ export async function uploadAsset({
   const { data: createdAsset, error: dbError } = await supabase
     .from('content_assets')
     .insert(insertPayload)
-    .select('*, campaigns:campaign_id ( id, name ), content_items:content_item_id ( id, title )')
+    .select('*')
     .single();
 
   if (dbError || !createdAsset) {
@@ -230,7 +230,7 @@ export async function searchAssets({
 
   let query = supabase
     .from('content_assets')
-    .select('*, campaigns:campaign_id ( id, name ), content_items:content_item_id ( id, title )', { count: 'exact' })
+    .select('*', { count: 'exact' })
     .eq('brand_id', brandId);
 
   if (campaignId) {
@@ -350,7 +350,7 @@ export async function getAssetById(assetId: string): Promise<ContentAsset | null
 
   const { data, error } = await supabase
     .from('content_assets')
-    .select('*, campaigns:campaign_id ( id, name ), content_items:content_item_id ( id, title )')
+    .select('*')
     .eq('id', assetId)
     .single();
 
@@ -442,7 +442,7 @@ export async function linkExistingAssetToContent(
   const { data: created, error } = await supabase
     .from('content_assets')
     .insert(insertPayload)
-    .select('*, campaigns:campaign_id ( id, name ), content_items:content_item_id ( id, title )')
+    .select('*')
     .single();
 
   if (error) {
