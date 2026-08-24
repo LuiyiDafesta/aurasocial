@@ -41,6 +41,7 @@ export function ContentProductionStudio({
 }: ContentProductionStudioProps) {
   const [adaptations, setAdaptations] = useState<PlatformAdaptation[]>([]);
   const [activePlatform, setActivePlatform] = useState<TargetPlatform>('instagram');
+  const [activeSceneNumber, setActiveSceneNumber] = useState<number>(1);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [selectedSceneForAsset, setSelectedSceneForAsset] = useState<number | null>(null);
   const [isAssetPickerOpen, setIsAssetPickerOpen] = useState<boolean>(false);
@@ -305,8 +306,11 @@ export function ContentProductionStudio({
         <div className="lg:col-span-4 h-full">
           <SceneMediaPlannerPanel
             scenes={activeAdaptation?.scene_mappings || []}
+            activeSceneNumber={activeSceneNumber}
+            onSelectActiveScene={setActiveSceneNumber}
             onSelectSceneForAsset={(sceneNum) => {
               setSelectedSceneForAsset(sceneNum);
+              setActiveSceneNumber(sceneNum);
               setIsAssetPickerOpen(true);
             }}
             onUpdateSceneText={handleUpdateSceneText}
@@ -318,6 +322,8 @@ export function ContentProductionStudio({
         <div className="lg:col-span-4 h-full">
           <UnifiedSocialPreview
             publicationPackage={pkg}
+            activeAdaptation={activeAdaptation}
+            currentSceneNumber={activeSceneNumber}
           />
         </div>
 

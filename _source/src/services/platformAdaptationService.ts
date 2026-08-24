@@ -21,6 +21,7 @@ import { validatePlatformTexts } from './platformTextValidator';
 import { extractMediaSlotsFromScenes } from './mediaSlotService';
 import { planMediaForContent } from './mediaPlannerService';
 import { composeAndRenderAdaptation } from './renderService';
+import { getSignedAssetUrl } from './contentAssetService';
 
 export const DEFAULT_PLATFORM_CONFIGS: Array<{
   platform: TargetPlatform;
@@ -654,6 +655,15 @@ export async function updateAdaptationSceneAsset(
   asset: ContentAsset,
   brandName: string
 ): Promise<PlatformAdaptation> {
+  let assetUrl = asset.signed_url || (asset as any).public_url || (asset as any).url;
+  if (!assetUrl && asset.storage_path) {
+    try {
+      assetUrl = await getSignedAssetUrl(asset.storage_path);
+    } catch {
+      assetUrl = `https://f004.backblazeb2.com/file/${asset.storage_bucket || 'AuraSocial'}/${asset.storage_path}`;
+    }
+  }
+
   const updatedScenes = adaptation.scene_mappings.map((s) => {
     if (s.scene_number === sceneNumber) {
       return {
@@ -663,7 +673,7 @@ export async function updateAdaptationSceneAsset(
         asset_name: asset.name,
         storage_path: asset.storage_path,
         mime_type: asset.mime_type,
-        asset_url: asset.signed_url || (asset as any).public_url || s.asset_url,
+        asset_url: assetUrl,
         status: 'resolved' as const,
       };
     }

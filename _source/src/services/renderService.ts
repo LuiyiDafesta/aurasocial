@@ -51,8 +51,9 @@ export async function composeAndRenderAdaptation(params: RenderParams): Promise<
   }));
 
   // 4. Obtener asset primario o componer SVG vectorial determinista de salida real
-  const primaryScene = scenes.find((s) => s.asset_url && s.status === 'resolved') || scenes[0];
+  const primaryScene = scenes.find((s) => (s.asset_url || s.storage_path) && s.status === 'resolved') || scenes[0];
   const primaryOverlay = scenes.find((s) => s.on_screen_text && s.on_screen_text.trim())?.on_screen_text || '';
+  const resolvedPrimaryUrl = primaryScene?.asset_url || (primaryScene?.storage_path ? `https://f004.backblazeb2.com/file/AuraSocial/${primaryScene.storage_path}` : null);
 
   // Generar buffer / data URI del archivo multimedia real de salida
   const svgOutputContent = encodeURIComponent(`
@@ -81,8 +82,8 @@ export async function composeAndRenderAdaptation(params: RenderParams): Promise<
     </svg>
   `);
 
-  const realMediaUrl = primaryScene?.asset_url && !primaryScene.asset_url.includes('placehold.co')
-    ? primaryScene.asset_url
+  const realMediaUrl = resolvedPrimaryUrl && !resolvedPrimaryUrl.includes('placehold.co')
+    ? resolvedPrimaryUrl
     : `data:image/svg+xml;utf8,${svgOutputContent}`;
 
   const storagePath = `renders/content_${adaptation.content_item_id || 'item'}/${adaptation.platform || 'ig'}_${adaptation.format || 'post'}_v${versionNumber}.svg`;

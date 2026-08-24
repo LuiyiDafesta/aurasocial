@@ -16,6 +16,8 @@ import {
 
 interface SceneMediaPlannerPanelProps {
   scenes: SceneMediaPlan[];
+  activeSceneNumber?: number;
+  onSelectActiveScene?: (sceneNumber: number) => void;
   onSelectSceneForAsset: (sceneNumber: number) => void;
   onUpdateSceneText: (sceneNumber: number, text: string) => void;
   onUsePlaceholder: (sceneNumber: number) => void;
@@ -24,12 +26,18 @@ interface SceneMediaPlannerPanelProps {
 
 export function SceneMediaPlannerPanel({
   scenes,
+  activeSceneNumber,
+  onSelectActiveScene,
   onSelectSceneForAsset,
   onUpdateSceneText,
   onUsePlaceholder,
   isReadOnly = false,
 }: SceneMediaPlannerPanelProps) {
-  const [activeSceneIndex, setActiveSceneIndex] = useState<number>(0);
+  const [internalSceneIndex, setInternalSceneIndex] = useState<number>(0);
+
+  const activeSceneIndex = activeSceneNumber !== undefined
+    ? Math.max(0, scenes.findIndex((s) => s.scene_number === activeSceneNumber))
+    : internalSceneIndex;
 
   const getSourceBadge = (source: AssetResolutionSource, status: string) => {
     if (status === 'needs_asset' || source === 'needs_asset') {
@@ -101,7 +109,12 @@ export function SceneMediaPlannerPanel({
           return (
             <button
               key={scene.scene_number}
-              onClick={() => setActiveSceneIndex(idx)}
+              onClick={() => {
+                setInternalSceneIndex(idx);
+                if (onSelectActiveScene) {
+                  onSelectActiveScene(scene.scene_number);
+                }
+              }}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
                 isSelected
                   ? 'bg-aura-600 text-white shadow-md shadow-aura-950/40'
