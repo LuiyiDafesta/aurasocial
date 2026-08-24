@@ -1,0 +1,180 @@
+{
+  "name": "AuraSocial - Social Publishing Orchestrator",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger-publish",
+      "name": "When clicking 'Execute workflow'",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [180, 240]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "aurasocial/social/publish",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger-publish",
+      "name": "Webhook Trigger (Publish Orchestrator)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [180, 420],
+      "webhookId": "aurasocial-social-publish-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. Validar y normalizar payload de publicación\nconst input = $input.first().json;\nconst body = input.body || input;\n\nconst workspaceId = body.workspaceId || body.workspace_id;\nconst brandId = body.brandId || body.brand_id;\nconst contentId = body.contentId || body.content_id;\nconst provider = body.provider || 'socialit';\nconst mode = body.mode || 'dry_run';\nconst targets = body.targets || [];\nconst publishPackage = body.publishPackage || body.publish_package || {};\n\n// Aislamiento y validación de campos requeridos\nif (!workspaceId) {\n  throw new Error('BAD_REQUEST: workspaceId es requerido.');\n}\nif (!brandId) {\n  throw new Error('BAD_REQUEST: brandId es requerido.');\n}\nif (!contentId) {\n  throw new Error('BAD_REQUEST: contentId es requerido.');\n}\nif (!provider) {\n  throw new Error('BAD_REQUEST: provider es requerido.');\n}\n\n// GUARDIA ESTRICTA: Solo se acepta mode = 'dry_run' en esta fase\nif (mode !== 'dry_run') {\n  return [{\n    json: {\n      error_code: 'REAL_PUBLISHING_DISABLED',\n      http_status: 403,\n      success: false,\n      mode: mode,\n      error: 'REAL_PUBLISHING_DISABLED: La publicación real está deshabilitada en esta fase (Kill Switch activo). Solo se admite mode=\"dry_run\".'\n    }\n  }];\n}\n\nif (!Array.isArray(targets) || targets.length === 0) {\n  return [{\n    json: {\n      error_code: 'EMPTY_TARGETS',\n      http_status: 400,\n      success: false,\n      mode: mode,\n      error: 'BAD_REQUEST: El array de targets no puede estar vacío.'\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    workspaceId,\n    brandId,\n    contentId,\n    provider,\n    mode: 'dry_run',\n    targets,\n    publishPackage,\n    is_valid: true\n  }\n}];"
+      },
+      "id": "prep-validate-publish",
+      "name": "Preparar y Validar Publicación",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 330]
+    },
+    {
+      "parameters": {
+        "jsCode": "// 2. Expandir dinámicamente targets[] en N items independientes\nconst input = $input.first().json;\n\nif (!input.is_valid) {\n  return [{ json: input }];\n}\n\nconst { workspaceId, brandId, contentId, provider, mode, targets, publishPackage } = input;\n\nreturn targets.map(target => ({\n  json: {\n    workspaceId,\n    brandId,\n    contentId,\n    provider: target.provider || provider,\n    mode,\n    platform: target.platform,\n    connectionId: target.connectionId || target.connection_id || target.id,\n    publishPackage,\n    is_target_item: true\n  }\n}));"
+      },
+      "id": "expand-targets-node",
+      "name": "Expandir Targets (Dinámico)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [700, 330]
+    },
+    {
+      "parameters": {
+        "jsCode": "// 3. Validar individualmente cada target antes de procesar\nconst items = $input.all();\n\nreturn items.map(item => {\n  const data = item.json;\n  \n  if (!data.is_target_item) {\n    return { json: data };\n  }\n\n  const errors = [];\n  if (!data.connectionId) errors.push('connectionId requerido');\n  if (!data.platform) errors.push('platform requerida');\n  if (!data.workspaceId) errors.push('workspaceId requerido');\n  if (!data.brandId) errors.push('brandId requerido');\n  \n  const validProviders = ['socialit', 'robin_research', 'meta_direct'];\n  if (!validProviders.includes(data.provider)) errors.push(`provider '${data.provider}' no soportado`);\n\n  return {\n    json: {\n      ...data,\n      target_valid: errors.length === 0,\n      target_errors: errors\n    }\n  };\n});"
+      },
+      "id": "validate-targets-node",
+      "name": "Validar Target",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [940, 330]
+    },
+    {
+      "parameters": {
+        "jsCode": "// 4. Dry Run Publisher: Simulación determinista sin llamadas a APIs externas\n// ZERO PUBLISHING MANDATE: Cero requests a Socialit /v1/posts\nconst items = $input.all();\n\nreturn items.map(item => {\n  const data = item.json;\n\n  if (!data.is_target_item) {\n    return { json: data };\n  }\n\n  if (!data.target_valid) {\n    return {\n      json: {\n        success: false,\n        mode: 'dry_run',\n        published: false,\n        platform: data.platform || 'unknown',\n        connectionId: data.connectionId || null,\n        provider: data.provider,\n        would_publish: false,\n        errors: data.target_errors\n      }\n    };\n  }\n\n  return {\n    json: {\n      success: true,\n      mode: 'dry_run',\n      published: false,\n      platform: data.platform,\n      connectionId: data.connectionId,\n      provider: data.provider,\n      would_publish: true,\n      target_readiness: {\n        has_media: Boolean(data.publishPackage && data.publishPackage.media && data.publishPackage.media.url),\n        caption_length: data.publishPackage && data.publishPackage.caption ? data.publishPackage.caption.length : 0,\n        hashtags_count: data.publishPackage && Array.isArray(data.publishPackage.hashtags) ? data.publishPackage.hashtags.length : 0\n      }\n    }\n  };\n});"
+      },
+      "id": "dry-run-publisher-node",
+      "name": "Dry Run Publisher (Cero Publicación)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1180, 330]
+    },
+    {
+      "parameters": {
+        "jsCode": "// 5. Consolidar Resultados de Publicación Dry Run\nconst items = $input.all();\nconst first = items[0] ? items[0].json : {};\n\n// Si hubo error global previo\nif (first.error_code) {\n  return [{\n    json: {\n      success: false,\n      error_code: first.error_code,\n      http_status: first.http_status || 400,\n      mode: first.mode || 'dry_run',\n      published: false,\n      publishing_requests: 0,\n      error: first.error,\n      timestamp: new Date().toISOString()\n    }\n  }];\n}\n\nconst prepData = $('Preparar y Validar Publicación').first().json;\n\nconst formattedResults = items.map(item => {\n  const d = item.json;\n  return {\n    platform: d.platform,\n    connectionId: d.connectionId,\n    provider: d.provider,\n    success: d.success === true,\n    mode: 'dry_run',\n    published: false,\n    would_publish: d.would_publish === true,\n    target_readiness: d.target_readiness || null\n  };\n});\n\nconst allSuccess = formattedResults.every(r => r.success && r.would_publish);\n\nreturn [{\n  json: {\n    success: allSuccess,\n    mode: 'dry_run',\n    published: false,\n    publishing_requests: 0,\n    accounts_processed: formattedResults.length,\n    contentId: prepData.contentId,\n    workspaceId: prepData.workspaceId,\n    brandId: prepData.brandId,\n    provider: prepData.provider,\n    results: formattedResults,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "consolidate-publish-results",
+      "name": "Consolidar Resultados",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1420, 330]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{JSON.stringify($json)}}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond-to-publish-webhook",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1660, 330]
+    }
+  ],
+  "connections": {
+    "When clicking 'Execute workflow'": {
+      "main": [
+        [
+          {
+            "node": "Preparar y Validar Publicación",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Trigger (Publish Orchestrator)": {
+      "main": [
+        [
+          {
+            "node": "Preparar y Validar Publicación",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar y Validar Publicación": {
+      "main": [
+        [
+          {
+            "node": "Expandir Targets (Dinámico)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Expandir Targets (Dinámico)": {
+      "main": [
+        [
+          {
+            "node": "Validar Target",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar Target": {
+      "main": [
+        [
+          {
+            "node": "Dry Run Publisher (Cero Publicación)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dry Run Publisher (Cero Publicación)": {
+      "main": [
+        [
+          {
+            "node": "Consolidar Resultados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consolidar Resultados": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

@@ -9,6 +9,12 @@ export type OrchestrationEventType =
   | 'provider_account_expired'
   | 'provider_fallback_triggered'
   | 'social_account_bound'
+  | 'n8n_sync_orchestration_started'
+  | 'n8n_sync_orchestration_completed'
+  | 'n8n_sync_orchestration_failed'
+  | 'n8n_publish_orchestration_started'
+  | 'n8n_publish_orchestration_completed'
+  | 'n8n_publish_orchestration_failed'
   | 'publishing_readiness_changed';
 
 export interface OrchestrationEventPayload {

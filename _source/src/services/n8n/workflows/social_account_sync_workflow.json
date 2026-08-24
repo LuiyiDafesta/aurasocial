@@ -1,22 +1,37 @@
 {
-  "name": "AuraSocial — Social Account Sync",
+  "name": "AuraSocial - Sync Socialit Accounts",
   "nodes": [
     {
+      "parameters": {},
+      "id": "manual-trigger-node",
+      "name": "When clicking 'Execute workflow'",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [180, 240]
+    },
+    {
       "parameters": {
-        "rule": {
-          "interval": [
-            {
-              "field": "days",
-              "daysInterval": 1
-            }
-          ]
-        }
+        "httpMethod": "POST",
+        "path": "aurasocial/social/sync",
+        "responseMode": "responseNode",
+        "options": {}
       },
-      "id": "schedule-daily-trigger",
-      "name": "Daily Sync Trigger (1/day)",
-      "type": "n8n-nodes-base.scheduleTrigger",
-      "typeVersion": 1.1,
-      "position": [250, 300]
+      "id": "webhook-trigger-node",
+      "name": "Webhook Trigger (AuraSocial Sync)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [180, 420],
+      "webhookId": "aurasocial-social-sync-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normalizar parámetros recibidos vía Webhook o Manual Trigger\nconst input = $input.first().json;\n\nconst body = input.body || input;\nconst workspaceId = body.workspaceId || body.workspace_id || $env.DEFAULT_WORKSPACE_ID || '8be26f9f-4d67-4410-a36e-cab8d34aab36';\nconst brandId = body.brandId || body.brand_id || '304338b5-1768-4260-a1ee-6fa8b4816fb0';\nconst provider = body.provider || 'socialit';\n\nreturn [{\n  json: {\n    workspaceId,\n    brandId,\n    provider,\n    bindToBrand: false\n  }\n}];"
+      },
+      "id": "prep-input-node",
+      "name": "Preparar Parámetros de Invocación",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [420, 330]
     },
     {
       "parameters": {
@@ -27,38 +42,183 @@
           "parameters": [
             {
               "name": "Authorization",
-              "value": "Bearer {{$env.AURASOCIAL_N8N_API_KEY}}"
+              "value": "Bearer {{$env.AURASOCIAL_N8N_API_KEY || 'aura_n8n_live_sec_99a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4'}}"
             },
             {
               "name": "x-workspace-id",
-              "value": "={{$env.DEFAULT_WORKSPACE_ID}}"
+              "value": "={{$json.workspaceId}}"
+            },
+            {
+              "name": "x-brand-id",
+              "value": "={{$json.brandId}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
             }
           ]
         },
         "sendBody": true,
-        "bodyParameters": {
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"brandId\": \"{{$json.brandId}}\",\n  \"bindToBrand\": false,\n  \"provider\": \"{{$json.provider}}\"\n}",
+        "options": {}
+      },
+      "id": "http-sync-discovery",
+      "name": "HTTP Request - Discovery Socialit",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, 330]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Procesar dinámicamente cualquier cantidad de cuentas descubiertas\nconst response = $input.first().json;\nconst prepData = $('Preparar Parámetros de Invocación').first().json;\n\nconst accounts = (response.data && response.data.accounts) ? response.data.accounts : [];\n\nif (!accounts || accounts.length === 0) {\n  return [];\n}\n\nreturn accounts.map(acc => ({\n  json: {\n    workspaceId: prepData.workspaceId,\n    brandId: prepData.brandId,\n    provider: acc.provider || prepData.provider || 'socialit',\n    provider_account_id: acc.provider_account_id || acc.account_id || acc.id,\n    platform: acc.platform,\n    account_name: acc.account_name,\n    account_username: acc.account_username || null\n  }\n}));"
+      },
+      "id": "process-discovered-accounts",
+      "name": "Procesar Cuentas Descubiertas",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 330]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.AURASOCIAL_API_URL || 'https://aurasocial.lsnethub.com'}}/api/social/accounts/bind",
+        "sendHeaders": true,
+        "headerParameters": {
           "parameters": [
             {
-              "name": "bindToBrand",
-              "value": false
+              "name": "Authorization",
+              "value": "Bearer {{$env.AURASOCIAL_N8N_API_KEY || 'aura_n8n_live_sec_99a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4'}}"
+            },
+            {
+              "name": "x-workspace-id",
+              "value": "={{$json.workspaceId}}"
+            },
+            {
+              "name": "x-brand-id",
+              "value": "={{$json.brandId}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
             }
           ]
         },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"workspaceId\": \"{{$json.workspaceId}}\",\n  \"brandId\": \"{{$json.brandId}}\",\n  \"provider\": \"{{$json.provider}}\",\n  \"provider_account_id\": \"{{$json.provider_account_id}}\"\n}",
         "options": {}
       },
-      "id": "sync-social-accounts",
-      "name": "Sync Socialit Accounts",
+      "id": "http-bind-account",
+      "name": "HTTP Request1 - Bind Account",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.1,
-      "position": [500, 300]
+      "typeVersion": 4.2,
+      "position": [1140, 330]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Consolidar los resultados de binding en una respuesta estructurada limpia\nconst bindResults = $input.all();\nconst prepData = $('Preparar Parámetros de Invocación').first().json;\n\nconst formattedResults = bindResults.map(item => {\n  const res = item.json;\n  const conn = res.data && res.data.connection ? res.data.connection : {};\n  return {\n    platform: conn.platform || 'unknown',\n    provider_account_id: conn.provider_account_id || 'unknown',\n    account_name: conn.account_name || 'unknown',\n    success: res.success === true,\n    already_bound: res.data ? res.data.already_bound === true : false,\n    connection_id: conn.id || null\n  };\n});\n\nreturn [{\n  json: {\n    success: true,\n    workspaceId: prepData.workspaceId,\n    brandId: prepData.brandId,\n    provider: prepData.provider,\n    accounts_processed: formattedResults.length,\n    results: formattedResults,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "consolidate-results-node",
+      "name": "Consolidar Resultados de Orquestación",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1380, 330]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{JSON.stringify($json)}}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond-to-webhook-node",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1620, 330]
     }
   ],
   "connections": {
-    "Daily Sync Trigger (1/day)": {
+    "When clicking 'Execute workflow'": {
       "main": [
         [
           {
-            "node": "Sync Socialit Accounts",
+            "node": "Preparar Parámetros de Invocación",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Trigger (AuraSocial Sync)": {
+      "main": [
+        [
+          {
+            "node": "Preparar Parámetros de Invocación",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Parámetros de Invocación": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request - Discovery Socialit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request - Discovery Socialit": {
+      "main": [
+        [
+          {
+            "node": "Procesar Cuentas Descubiertas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Procesar Cuentas Descubiertas": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1 - Bind Account",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request1 - Bind Account": {
+      "main": [
+        [
+          {
+            "node": "Consolidar Resultados de Orquestación",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consolidar Resultados de Orquestación": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
             "type": "main",
             "index": 0
           }

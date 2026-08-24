@@ -405,6 +405,52 @@ if ($method === 'GET' && $path === 'social/accounts') {
             'brand_id' => $targetBrand
         ]
     ]);
+if ($method === 'POST' && $path === 'social/publish') {
+    $mode = $body['mode'] ?? 'dry_run';
+    $targets = $body['targets'] ?? [];
+    $contentId = $body['contentId'] ?? ($body['content_id'] ?? '');
+
+    if ($mode !== 'dry_run') {
+        http_response_code(403);
+        echo json_encode([
+            'success' => false,
+            'error_code' => 'REAL_PUBLISHING_DISABLED',
+            'error' => 'REAL_PUBLISHING_DISABLED: La publicación real está estrictamente deshabilitada en esta fase (Kill Switch activo). Solo se admite mode="dry_run".'
+        ]);
+        exit;
+    }
+
+    $results = [];
+    foreach ($targets as $target) {
+        $results[] = [
+            'platform' => $target['platform'] ?? 'unknown',
+            'connectionId' => $target['connectionId'] ?? ($target['connection_id'] ?? ''),
+            'provider' => $target['provider'] ?? 'socialit',
+            'success' => true,
+            'mode' => 'dry_run',
+            'published' => false,
+            'would_publish' => true,
+            'target_readiness' => [
+                'has_media' => true,
+                'caption_length' => 120,
+                'hashtags_count' => 3
+            ]
+        ];
+    }
+
+    echo json_encode([
+        'success' => true,
+        'mode' => 'dry_run',
+        'published' => false,
+        'publishing_requests' => 0,
+        'accounts_processed' => count($results),
+        'contentId' => $contentId,
+        'workspaceId' => $workspaceId,
+        'brandId' => $brandId,
+        'provider' => $body['provider'] ?? 'socialit',
+        'results' => $results,
+        'timestamp' => gmdate('Y-m-d\TH:i:s\Z')
+    ]);
     exit;
 }
 
