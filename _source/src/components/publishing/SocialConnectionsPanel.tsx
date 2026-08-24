@@ -19,6 +19,7 @@ import {
 } from '../../services/socialConnectionService';
 import { SocialAccountDiagnosticReport } from '../../services/socialProviders/socialProviderHealthService';
 import { socialitProvider } from '../../services/socialProviders/SocialitProvider';
+import { n8nOrchestratorService } from '../../services/n8n/n8nOrchestratorService';
 import { ConnectAccountModal } from './ConnectAccountModal';
 import { Button } from '../common/Button';
 import { useToast } from '../../hooks/useToast';
@@ -111,6 +112,7 @@ export function SocialConnectionsPanel({
   const [unassignedAccounts, setUnassignedAccounts] = useState<SocialConnection[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isDiscoveringSocialit, setIsDiscoveringSocialit] = useState<boolean>(false);
+  const [isSyncingN8n, setIsSyncingN8n] = useState<boolean>(false);
   const [activeActionPlatform, setActiveActionPlatform] = useState<SocialPlatform | null>(null);
   const [busyConnectionId, setBusyConnectionId] = useState<string | null>(null);
 
@@ -165,6 +167,29 @@ export function SocialConnectionsPanel({
     loadConnections();
     checkSocialitStatus();
   }, [loadConnections, checkSocialitStatus]);
+
+  const handleSyncWithN8nWorkflow = async () => {
+    try {
+      setIsSyncingN8n(true);
+      const result = await n8nOrchestratorService.triggerSocialSyncWorkflow({
+        workspaceId,
+        brandId,
+        provider: 'socialit',
+      });
+
+      if (!result.success && result.error) {
+        toast(`Error en orquestación n8n: ${result.error}`, { type: 'error' });
+      } else {
+        toast(`🟢 Sincronización n8n exitosa: ${result.accounts_processed} cuenta(s) vinculadas con "AuraSocial - Sync Socialit Accounts"`, { type: 'success' });
+      }
+      await loadConnections();
+      await checkSocialitStatus();
+    } catch (err: any) {
+      toast(`Error al invocar n8n: ${err.message}`, { type: 'error' });
+    } finally {
+      setIsSyncingN8n(false);
+    }
+  };
 
   const handleDiscoverSocialitAccounts = async () => {
     try {
@@ -345,7 +370,19 @@ export function SocialConnectionsPanel({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleSyncWithN8nWorkflow}
+              isLoading={isSyncingN8n}
+              className="text-xs bg-purple-600 hover:bg-purple-500 text-white gap-1.5 shadow-md shadow-purple-600/20"
+              title="Orquestar descubrimiento y binding mediante el workflow de n8n 'AuraSocial - Sync Socialit Accounts'"
+            >
+              <Zap className="w-3.5 h-3.5" />
+              Sincronizar vía n8n (AuraSocial - Sync Socialit Accounts)
+            </Button>
+
             <Button
               variant="secondary"
               size="sm"
@@ -354,7 +391,7 @@ export function SocialConnectionsPanel({
               className="text-xs bg-indigo-600 hover:bg-indigo-500 text-white gap-1.5 shadow-md shadow-indigo-600/20"
             >
               <Globe2 className="w-3.5 h-3.5" />
-              Descubrir Cuentas de Socialit
+              Descubrir Directo
             </Button>
 
             <Button
