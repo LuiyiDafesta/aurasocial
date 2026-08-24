@@ -39,8 +39,10 @@ import {
   History, 
   ShieldCheck, 
   FileText, 
-  Sliders
+  Sliders,
+  Zap
 } from 'lucide-react';
+import { n8nOrchestratorService } from '../../services/n8n/n8nOrchestratorService';
 
 interface FinalContentEditorProps {
   contentItem: ContentItem;
@@ -83,6 +85,7 @@ export function FinalContentEditor({
   const [isRejecting, setIsRejecting] = useState<boolean>(false);
   const [isDownloadingMedia, setIsDownloadingMedia] = useState<boolean>(false);
   const [isPublishingManual, setIsPublishingManual] = useState<boolean>(false);
+  const [isPublishingN8n, setIsPublishingN8n] = useState<boolean>(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
 
   // Modals
@@ -112,6 +115,45 @@ export function FinalContentEditor({
       setCta('');
     }
   }, [currentAdaptation, activePlatform]);
+
+  const handlePublishN8nDryRun = async () => {
+    if (!currentAdaptation || !contentItem.workspace_id || !contentItem.brand_id) return;
+    try {
+      setIsPublishingN8n(true);
+      const res = await n8nOrchestratorService.triggerSocialPublishWorkflow({
+        workspaceId: contentItem.workspace_id,
+        brandId: contentItem.brand_id,
+        contentId: currentAdaptation.content_item_id,
+        provider: 'socialit',
+        mode: 'dry_run',
+        targets: [
+          {
+            platform: activePlatform,
+            connectionId: currentAdaptation.id,
+            provider: 'socialit',
+          }
+        ],
+        publishPackage: {
+          title: title || undefined,
+          caption: validationState.cleanCaption || caption,
+          hashtags: validationState.parsedHashtags,
+          media: currentRenderJob?.output_storage_path
+            ? { url: currentRenderJob.output_storage_path, mimeType: 'video/mp4' }
+            : undefined,
+        }
+      });
+
+      if (res.success) {
+        toast(`⚡ Orquestación n8n Dry Run exitosa: ${res.accounts_processed} cuenta(s) verificadas sin publicación externa.`, { type: 'success' });
+      } else {
+        toast(`Error en orquestación n8n: ${res.error || 'Error desconocido'}`, { type: 'error' });
+      }
+    } catch (e: any) {
+      toast(`Error al invocar n8n: ${e.message}`, { type: 'error' });
+    } finally {
+      setIsPublishingN8n(false);
+    }
+  };
 
   // Real-time Text QA & Quality Gate Validation
   const validationState = useMemo(() => {
@@ -731,13 +773,25 @@ export function FinalContentEditor({
                 <div className="flex items-center gap-2">
                   <Button
                     size="sm"
+                    onClick={handlePublishN8nDryRun}
+                    disabled={isPublishingN8n}
+                    isLoading={isPublishingN8n}
+                    className="bg-purple-600 hover:bg-purple-500 text-white text-xs gap-1.5 shadow-md shadow-purple-600/20"
+                    title="Orquestar publicación en modo seguro (Dry Run) mediante n8n"
+                  >
+                    <Zap className="w-3.5 h-3.5" />
+                    ⚡ Publicar vía n8n (Dry Run)
+                  </Button>
+
+                  <Button
+                    size="sm"
                     onClick={handlePrepareManualPublishing}
                     disabled={isPublishingManual}
                     isLoading={isPublishingManual}
                     className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs gap-1.5"
                   >
                     <FileText className="w-3.5 h-3.5" />
-                    📋 Preparar Publicación Manual
+                    📋 Preparar Manual
                   </Button>
 
                   <Button
