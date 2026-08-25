@@ -84,6 +84,8 @@ export interface SceneMediaPlan {
   camera_direction?: string;
   duration_seconds: number;
   asset_duration_seconds?: number | null;
+  source_start_seconds?: number | null;
+  source_end_seconds?: number | null;
   on_screen_text?: string;
   voiceover?: string;
   transition?: string;
@@ -249,6 +251,8 @@ export interface RenderPackage {
   scenes: Array<{
     scene_number: number;
     duration_seconds: number;
+    source_start_seconds?: number | null;
+    source_end_seconds?: number | null;
     visual_direction?: string;
     transition?: string;
     layout?: string;

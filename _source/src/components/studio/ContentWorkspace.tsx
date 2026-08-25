@@ -12,6 +12,7 @@ import {
   getPlatformAdaptations,
   generateDefaultAdaptations,
   updateAdaptationSceneAsset,
+  updateAdaptationSceneTrimRange,
   removeAdaptationSceneAsset,
   reorderAdaptationScenes,
   addAdaptationScene,
@@ -415,6 +416,27 @@ export function ContentWorkspace({
     }
   };
 
+  const handleUpdateSceneTrimRange = async (sceneNumber: number, startSeconds: number, endSeconds: number) => {
+    if (!activeAdaptation) return;
+    try {
+      const updated = await updateAdaptationSceneTrimRange(
+        activeAdaptation,
+        sceneNumber,
+        startSeconds,
+        endSeconds,
+        item.brands?.name || 'Aura Social'
+      );
+      setAdaptations((prev) =>
+        prev.map((a) => (a.id === updated.id ? updated : a))
+      );
+    } catch (err: any) {
+      toast('Error al recortar fragmento', {
+        type: 'error',
+        description: err.message,
+      });
+    }
+  };
+
   const handleSyncAllPlatforms = async () => {
     if (!activeAdaptation) return;
 
@@ -587,6 +609,7 @@ export function ContentWorkspace({
               onAddScene={handleAddScene}
               onRemoveScene={handleRemoveScene}
               onUpdateSceneDuration={handleUpdateSceneDuration}
+              onUpdateSceneTrimRange={handleUpdateSceneTrimRange}
               onUpdateSceneText={handleUpdateSceneText}
               onUpdateSceneTextPosition={handleUpdateSceneTextPosition}
               onUsePlaceholder={handleUsePlaceholderForScene}

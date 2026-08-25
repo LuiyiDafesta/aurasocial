@@ -684,6 +684,7 @@ export async function updateAdaptationSceneAsset(
     }
   }
 
+  const isVideo = asset.asset_type === 'video' || asset.mime_type?.startsWith('video');
   const rawAssetDuration = typeof asset.duration_seconds === 'number' && asset.duration_seconds > 0
     ? asset.duration_seconds
     : null;
@@ -695,14 +696,21 @@ export async function updateAdaptationSceneAsset(
 
     if (isMatch) {
       let newSceneDuration = s.duration_seconds;
-      if (rawAssetDuration !== null) {
-        newSceneDuration = Math.round(rawAssetDuration);
+      let startSec: number | null = null;
+      let endSec: number | null = null;
+
+      if (isVideo) {
+        if (rawAssetDuration !== null) {
+          startSec = 0;
+          endSec = rawAssetDuration;
+          newSceneDuration = Math.round(rawAssetDuration);
+        }
       }
 
       return {
         ...s,
         scene_id: ensureSceneId(s, idx),
-        asset_type: asset.asset_type === 'image' ? ('image' as const) : ('video' as const),
+        asset_type: isVideo ? ('video' as const) : ('image' as const),
         source: 'real_asset' as const,
         asset_id: asset.id,
         asset_name: asset.name,
@@ -710,8 +718,79 @@ export async function updateAdaptationSceneAsset(
         mime_type: asset.mime_type,
         asset_url: assetUrl,
         asset_duration_seconds: rawAssetDuration,
+        source_start_seconds: startSec,
+        source_end_seconds: endSec,
         duration_seconds: newSceneDuration,
         status: 'resolved' as const,
+      };
+    }
+    return {
+      ...s,
+      scene_id: ensureSceneId(s, idx),
+    };
+  });
+
+  const totalDuration = updatedScenes.reduce((acc, s) => acc + (s.duration_seconds || 4), 0);
+
+  const { renderOutput, publicationPackage, validation } = await composeAndRenderAdaptation({
+    adaptation: { ...adaptation, scene_mappings: updatedScenes, target_duration_seconds: totalDuration },
+    scenes: updatedScenes,
+    brandName,
+    campaignId: adaptation.campaign_id,
+  });
+
+  return savePlatformAdaptation({
+    ...adaptation,
+    scene_mappings: updatedScenes,
+    target_duration_seconds: totalDuration,
+    render_status: 'rendered',
+    render_output: renderOutput,
+    validation_status: validation.isValid ? 'valid' : 'blocked',
+    validation_errors: validation.errors,
+    validation_warnings: validation.warnings,
+    readiness_status: publicationPackage.readiness_status,
+    publication_package: publicationPackage,
+  });
+}
+
+/**
+ * Actualiza el recorte de tiempo (source_start_seconds -> source_end_seconds) de una escena.
+ * Valida que 0 <= start < end <= asset_duration_seconds y recalcula duration_seconds = end - start.
+ */
+export async function updateAdaptationSceneTrimRange(
+  adaptation: PlatformAdaptation,
+  sceneNumberOrId: number | string,
+  startSeconds: number,
+  endSeconds: number,
+  brandName: string
+): Promise<PlatformAdaptation> {
+  if (isNaN(startSeconds) || startSeconds < 0) {
+    throw new Error('El segundo de inicio debe ser mayor o igual a 0.');
+  }
+  if (isNaN(endSeconds) || endSeconds <= startSeconds) {
+    throw new Error('El segundo de fin debe ser mayor que el segundo de inicio.');
+  }
+
+  const updatedScenes = adaptation.scene_mappings.map((s, idx) => {
+    const isMatch = typeof sceneNumberOrId === 'string'
+      ? s.scene_id === sceneNumberOrId
+      : s.scene_number === sceneNumberOrId;
+
+    if (isMatch) {
+      if (s.asset_duration_seconds && endSeconds > s.asset_duration_seconds + 0.1) {
+        throw new Error(
+          `El segundo de fin (${endSeconds}s) no puede superar la duración física del archivo (${s.asset_duration_seconds}s).`
+        );
+      }
+
+      const calculatedDuration = Math.max(0.5, parseFloat((endSeconds - startSeconds).toFixed(2)));
+
+      return {
+        ...s,
+        scene_id: ensureSceneId(s, idx),
+        source_start_seconds: startSeconds,
+        source_end_seconds: endSeconds,
+        duration_seconds: calculatedDuration,
       };
     }
     return {
@@ -767,6 +846,8 @@ export async function removeAdaptationSceneAsset(
         mime_type: null,
         asset_url: null,
         asset_duration_seconds: null,
+        source_start_seconds: null,
+        source_end_seconds: null,
         status: 'needs_asset' as const,
       };
     }
@@ -1172,6 +1253,8 @@ export function buildRenderPackage(adaptation: PlatformAdaptation): RenderPackag
   const packageScenes = scenes.map((s) => ({
     scene_number: s.scene_number,
     duration_seconds: s.duration_seconds,
+    source_start_seconds: s.source_start_seconds ?? null,
+    source_end_seconds: s.source_end_seconds ?? null,
     visual_direction: s.visual_direction,
     transition: s.transition || 'fade',
     layout: s.layout || 'full_screen',
@@ -1203,6 +1286,8 @@ export function buildRenderPackage(adaptation: PlatformAdaptation): RenderPackag
       asset_id: s.asset_id!,
       storage_path: s.storage_path || undefined,
       mime_type: s.mime_type || undefined,
+      source_start_seconds: s.source_start_seconds ?? null,
+      source_end_seconds: s.source_end_seconds ?? null,
     }));
 
   const textLayers = scenes

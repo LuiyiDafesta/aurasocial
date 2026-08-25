@@ -24,7 +24,8 @@ import {
   ChevronLeft,
   ChevronRight,
   XCircle,
-  Clock
+  Clock,
+  Scissors
 } from 'lucide-react';
 
 interface SceneMediaPlannerPanelProps {
@@ -37,6 +38,7 @@ interface SceneMediaPlannerPanelProps {
   onAddScene?: () => void;
   onRemoveScene?: (sceneNumber: number) => void;
   onUpdateSceneDuration?: (sceneNumber: number, durationSeconds: number) => void;
+  onUpdateSceneTrimRange?: (sceneNumber: number, startSeconds: number, endSeconds: number) => void;
   onUpdateSceneText: (sceneNumber: number, text: string) => void;
   onUpdateSceneTextPosition?: (
     sceneNumber: number, 
@@ -58,6 +60,7 @@ export function SceneMediaPlannerPanel({
   onAddScene,
   onRemoveScene,
   onUpdateSceneDuration,
+  onUpdateSceneTrimRange,
   onUpdateSceneText,
   onUpdateSceneTextPosition,
   onUsePlaceholder,
@@ -329,6 +332,72 @@ export function SceneMediaPlannerPanel({
                 </div>
               )}
             </div>
+
+            {/* Video Trimming & Fragment Selector */}
+            {currentScene.status === 'resolved' && 
+             (currentScene.mime_type?.startsWith('video') || currentScene.asset_type === 'video') && (
+              <div className="p-2.5 bg-dark-900/60 rounded-xl border border-dark-800/80 space-y-2">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="font-semibold text-aura-400 flex items-center gap-1.5">
+                    <Scissors className="w-3.5 h-3.5" />
+                    Fragmento / Recorte de Video
+                  </span>
+                  {currentScene.asset_duration_seconds && (
+                    <span className="text-[10px] text-slate-400">
+                      Total archivo: <strong className="text-slate-200">{Math.round(currentScene.asset_duration_seconds)}s</strong>
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 text-xs">
+                  <div className="bg-dark-950 p-2 rounded-lg border border-dark-800 space-y-1">
+                    <label className="text-[10px] text-slate-400 font-medium block">Desde (s)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={(currentScene.source_end_seconds || currentScene.asset_duration_seconds || 100) - 1}
+                      value={currentScene.source_start_seconds ?? 0}
+                      onChange={(e) => {
+                        const start = Math.max(0, parseFloat(e.target.value) || 0);
+                        const end = currentScene.source_end_seconds ?? currentScene.asset_duration_seconds ?? (start + 5);
+                        if (onUpdateSceneTrimRange && end > start) {
+                          onUpdateSceneTrimRange(currentScene.scene_number, start, end);
+                        }
+                      }}
+                      disabled={isReadOnly || !onUpdateSceneTrimRange}
+                      className="w-full bg-dark-900 border border-dark-700/60 rounded px-1.5 py-0.5 text-white font-mono text-xs focus:outline-none focus:border-aura-500"
+                    />
+                  </div>
+
+                  <div className="bg-dark-950 p-2 rounded-lg border border-dark-800 space-y-1">
+                    <label className="text-[10px] text-slate-400 font-medium block">Hasta (s)</label>
+                    <input
+                      type="number"
+                      min={(currentScene.source_start_seconds ?? 0) + 1}
+                      max={currentScene.asset_duration_seconds || 300}
+                      value={currentScene.source_end_seconds ?? currentScene.asset_duration_seconds ?? currentScene.duration_seconds}
+                      onChange={(e) => {
+                        const start = currentScene.source_start_seconds ?? 0;
+                        const maxEnd = currentScene.asset_duration_seconds || 300;
+                        const end = Math.min(maxEnd, parseFloat(e.target.value) || (start + 1));
+                        if (onUpdateSceneTrimRange && end > start) {
+                          onUpdateSceneTrimRange(currentScene.scene_number, start, end);
+                        }
+                      }}
+                      disabled={isReadOnly || !onUpdateSceneTrimRange}
+                      className="w-full bg-dark-900 border border-dark-700/60 rounded px-1.5 py-0.5 text-white font-mono text-xs focus:outline-none focus:border-aura-500"
+                    />
+                  </div>
+
+                  <div className="bg-dark-950 p-2 rounded-lg border border-dark-800 space-y-1 flex flex-col justify-center items-center">
+                    <span className="text-[10px] text-slate-400 font-medium">Uso Escena</span>
+                    <span className="text-xs font-bold text-aura-300 font-mono">
+                      {currentScene.duration_seconds}s
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Visual & Camera Directions */}

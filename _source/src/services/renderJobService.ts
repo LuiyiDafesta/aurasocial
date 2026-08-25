@@ -98,6 +98,42 @@ export function validateMediaForRender(
         message: `scene ${sceneNum} debe tener duración mayor a 0 segundos.`,
       });
     }
+
+    // D. Validar rangos de recorte si existen
+    if (scene.source_start_seconds !== undefined && scene.source_start_seconds !== null) {
+      if (isNaN(scene.source_start_seconds) || scene.source_start_seconds < 0) {
+        errors.push(`scene ${sceneNum} has invalid source_start_seconds (${scene.source_start_seconds}s)`);
+        missing_slots.push({
+          scene_number: sceneNum,
+          slot_id: slotId,
+          reason: 'invalid_duration',
+          message: `scene ${sceneNum} tiene un inicio de fragmento inválido (${scene.source_start_seconds}s < 0).`,
+        });
+      }
+    }
+
+    if (scene.source_end_seconds !== undefined && scene.source_end_seconds !== null) {
+      const start = scene.source_start_seconds || 0;
+      if (isNaN(scene.source_end_seconds) || scene.source_end_seconds <= start) {
+        errors.push(`scene ${sceneNum} has invalid source_end_seconds (${scene.source_end_seconds}s <= ${start}s)`);
+        missing_slots.push({
+          scene_number: sceneNum,
+          slot_id: slotId,
+          reason: 'invalid_duration',
+          message: `scene ${sceneNum} tiene fin de fragmento (${scene.source_end_seconds}s) menor o igual al inicio (${start}s).`,
+        });
+      }
+
+      if (scene.asset_duration_seconds && scene.source_end_seconds > scene.asset_duration_seconds + 0.1) {
+        errors.push(`scene ${sceneNum} source_end_seconds (${scene.source_end_seconds}s) exceeds asset_duration (${scene.asset_duration_seconds}s)`);
+        missing_slots.push({
+          scene_number: sceneNum,
+          slot_id: slotId,
+          reason: 'invalid_duration',
+          message: `scene ${sceneNum} excede la duración física del video (${scene.source_end_seconds}s > ${scene.asset_duration_seconds}s).`,
+        });
+      }
+    }
   }
 
   // E, F. Validar RenderPackage Snapshot
