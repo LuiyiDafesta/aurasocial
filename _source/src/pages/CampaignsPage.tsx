@@ -5,6 +5,8 @@ import { useCampaigns } from '../hooks/useCampaigns';
 import { CampaignCard } from '../components/campaigns/CampaignCard';
 import { CampaignFormModal } from '../components/campaigns/CampaignFormModal';
 import { CampaignWorkspace } from './CampaignWorkspace';
+import { ConfirmDialog } from '../components/common/ConfirmDialog';
+import { deleteCampaign, deleteCampaignsBulk } from '../services/campaignService';
 import { Button } from '../components/common/Button';
 import { Input } from '../components/common/Input';
 import { 
@@ -18,7 +20,10 @@ import {
   CheckCircle2,
   Lightbulb,
   Layers,
-  X
+  X,
+  Trash2,
+  CheckSquare,
+  Square
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useToast } from '../hooks/useToast';
@@ -41,6 +46,14 @@ export function CampaignsPage({
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState<boolean>(false);
   const [campaignToEdit, setCampaignToEdit] = useState<Campaign | null>(null);
+
+  // Selección masiva y eliminación
+  const [selectedCampaignIds, setSelectedCampaignIds] = useState<string[]>([]);
+  const [campaignToDelete, setCampaignToDelete] = useState<Campaign | null>(null);
+  const [isBulkConfirmOpen, setIsBulkConfirmOpen] = useState<boolean>(false);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState<boolean>(false);
+
   const { toast } = useToast();
 
   const {
@@ -54,12 +67,69 @@ export function CampaignsPage({
     refreshCampaigns,
   } = useCampaigns(currentBrand?.id);
 
-  // Cerrar / resetear campaña activa si el usuario cambia de marca global
+  // Cerrar / resetear selección y campaña activa si el usuario cambia de marca global
   useEffect(() => {
+    setSelectedCampaignIds([]);
     if (selectedCampaign && selectedCampaign.brand_id !== currentBrand?.id) {
       setSelectedCampaign(null);
     }
   }, [currentBrand?.id, selectedCampaign]);
+
+  // Resetear selección al cambiar filtros
+  useEffect(() => {
+    setSelectedCampaignIds([]);
+  }, [statusFilter, searchQuery]);
+
+  const handleToggleSelectCampaign = (campaign: Campaign) => {
+    setSelectedCampaignIds((prev) =>
+      prev.includes(campaign.id)
+        ? prev.filter((id) => id !== campaign.id)
+        : [...prev, campaign.id]
+    );
+  };
+
+  const isAllCurrentPageSelected = campaigns.length > 0 && campaigns.every((c) => selectedCampaignIds.includes(c.id));
+
+  const handleToggleSelectAllCampaigns = () => {
+    const pageIds = campaigns.map((c) => c.id);
+    if (isAllCurrentPageSelected) {
+      setSelectedCampaignIds((prev) => prev.filter((id) => !pageIds.includes(id)));
+    } else {
+      setSelectedCampaignIds((prev) => Array.from(new Set([...prev, ...pageIds])));
+    }
+  };
+
+  const handleDeleteCampaignConfirm = async () => {
+    if (!campaignToDelete || isDeleting) return;
+    try {
+      setIsDeleting(true);
+      await deleteCampaign(campaignToDelete.id);
+      toast(`Campaña "${campaignToDelete.name}" eliminada correctamente`, { type: 'success' });
+      setCampaignToDelete(null);
+      setSelectedCampaignIds((prev) => prev.filter((id) => id !== campaignToDelete.id));
+      refreshCampaigns();
+    } catch (err: any) {
+      toast('Error al eliminar campaña', { type: 'error', description: err.message });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleBulkDeleteCampaignsConfirm = async () => {
+    if (selectedCampaignIds.length === 0 || isBulkDeleting) return;
+    try {
+      setIsBulkDeleting(true);
+      const res = await deleteCampaignsBulk(selectedCampaignIds);
+      toast(`Se eliminaron ${res.deletedCount} campañas correctamente`, { type: 'success' });
+      setSelectedCampaignIds([]);
+      setIsBulkConfirmOpen(false);
+      refreshCampaigns();
+    } catch (err: any) {
+      toast('Error al eliminar campañas en lote', { type: 'error', description: err.message });
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
 
   // Contadores globales agregados para el banner superior
   const statsOverview = useMemo(() => {
@@ -128,7 +198,19 @@ export function CampaignsPage({
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5 flex-wrap">
+        <div className="flex items-center gap-2.5 flex-wrap justify-end">
+          {campaigns.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleToggleSelectAllCampaigns}
+              leftIcon={isAllCurrentPageSelected ? <CheckSquare className="w-3.5 h-3.5 text-aura-400" /> : <Square className="w-3.5 h-3.5" />}
+              className="text-xs h-9 bg-dark-900 border-dark-800 hover:bg-dark-800"
+            >
+              {isAllCurrentPageSelected ? 'Deseleccionar' : 'Seleccionar Todas'}
+            </Button>
+          )}
+
           <Button
             variant="outline"
             size="sm"
@@ -156,6 +238,46 @@ export function CampaignsPage({
           </Button>
         </div>
       </div>
+
+      {/* Bulk Action Floating Toolbar */}
+      {selectedCampaignIds.length > 0 && (
+        <div className="bg-dark-900/95 border border-aura-500/40 rounded-2xl p-4 shadow-2xl flex items-center justify-between gap-4 flex-wrap animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-xl bg-aura-500/15 border border-aura-500/30 flex items-center justify-center text-aura-400 font-bold text-xs">
+              {selectedCampaignIds.length}
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-white">
+                {selectedCampaignIds.length} {selectedCampaignIds.length === 1 ? 'campaña seleccionada' : 'campañas seleccionadas'}
+              </h4>
+              <p className="text-xs text-slate-400">
+                Podés eliminarlas de tu espacio estratégico simultáneamente (las ideas y contenidos vinculados quedarán desvinculados de forma segura).
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSelectedCampaignIds([])}
+              className="text-xs text-slate-400 hover:text-white"
+            >
+              Cancelar selección
+            </Button>
+
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={() => setIsBulkConfirmOpen(true)}
+              leftIcon={<Trash2 className="w-3.5 h-3.5" />}
+              className="text-xs bg-rose-600 hover:bg-rose-500 text-white font-semibold shadow-lg shadow-rose-950/30"
+            >
+              Eliminar seleccionadas ({selectedCampaignIds.length})
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Metric Highlights Overview Bar */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
@@ -270,6 +392,9 @@ export function CampaignsPage({
             <CampaignCard
               key={campaign.id}
               campaign={campaign}
+              isSelected={selectedCampaignIds.includes(campaign.id)}
+              onToggleSelect={handleToggleSelectCampaign}
+              onDelete={(c) => setCampaignToDelete(c)}
               onSelect={(c) => setSelectedCampaign(c)}
               onEdit={(c) => {
                 setCampaignToEdit(c);
@@ -322,6 +447,32 @@ export function CampaignsPage({
           }}
         />
       )}
+
+      {/* Diálogo de Confirmación para Eliminación Individual de Campaña */}
+      <ConfirmDialog
+        isOpen={!!campaignToDelete}
+        onClose={() => setCampaignToDelete(null)}
+        onConfirm={handleDeleteCampaignConfirm}
+        title={`¿Eliminar campaña "${campaignToDelete?.name}"?`}
+        message="Esta acción eliminará de forma permanente la campaña. Las ideas, contenidos y sesiones vinculadas quedarán a salvo desvinculadas en la marca activa. No se puede deshacer."
+        confirmText={isDeleting ? 'Eliminando...' : 'Eliminar Campaña'}
+        cancelText="Cancelar"
+        type="danger"
+        isLoading={isDeleting}
+      />
+
+      {/* Diálogo de Confirmación para Eliminación Masiva de Campañas */}
+      <ConfirmDialog
+        isOpen={isBulkConfirmOpen}
+        onClose={() => setIsBulkConfirmOpen(false)}
+        onConfirm={handleBulkDeleteCampaignsConfirm}
+        title={`¿Eliminar ${selectedCampaignIds.length} campañas seleccionadas?`}
+        message={`Esta acción eliminará de forma permanente las ${selectedCampaignIds.length} campañas seleccionadas. Sus ideas y contenidos asociados quedarán resguardados en la marca. No se puede revertir.`}
+        confirmText={isBulkDeleting ? 'Eliminando en lote...' : `Eliminar ${selectedCampaignIds.length} Campañas`}
+        cancelText="Cancelar"
+        type="danger"
+        isLoading={isBulkDeleting}
+      />
     </div>
   );
 }

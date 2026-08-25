@@ -283,3 +283,61 @@ export async function updateCampaign(
 export async function archiveCampaign(campaignId: string): Promise<Campaign> {
   return updateCampaign(campaignId, { status: 'archived' });
 }
+
+/**
+ * Elimina una campaña de forma segura:
+ * 1. Desvincula ideas, contenidos y sesiones (set campaign_id = null).
+ * 2. Elimina la fila de campaigns.
+ */
+export async function deleteCampaign(campaignId: string): Promise<void> {
+  if (!campaignId) throw new Error('campaignId es requerido');
+
+  // 1. Desvincular dependencias asignadas
+  await Promise.allSettled([
+    supabase.from('content_ideas').update({ campaign_id: null }).eq('campaign_id', campaignId),
+    supabase.from('content_items').update({ campaign_id: null }).eq('campaign_id', campaignId),
+    supabase.from('generation_runs').update({ campaign_id: null }).eq('campaign_id', campaignId),
+    supabase.from('content_assets').update({ campaign_id: null }).eq('campaign_id', campaignId),
+  ]);
+
+  // 2. Eliminar fila de campaigns
+  const { error } = await supabase
+    .from('campaigns')
+    .delete()
+    .eq('id', campaignId);
+
+  if (error) {
+    console.error(`Error al eliminar campaña (${campaignId}):`, error);
+    throw new Error(`Error al eliminar campaña: ${error.message}`);
+  }
+}
+
+/**
+ * Elimina múltiples campañas en lote (Bulk Delete).
+ */
+export async function deleteCampaignsBulk(campaignIds: string[]): Promise<{ deletedCount: number }> {
+  if (!campaignIds || campaignIds.length === 0) {
+    return { deletedCount: 0 };
+  }
+
+  // 1. Desvincular dependencias en lote
+  await Promise.allSettled([
+    supabase.from('content_ideas').update({ campaign_id: null }).in('campaign_id', campaignIds),
+    supabase.from('content_items').update({ campaign_id: null }).in('campaign_id', campaignIds),
+    supabase.from('generation_runs').update({ campaign_id: null }).in('campaign_id', campaignIds),
+    supabase.from('content_assets').update({ campaign_id: null }).in('campaign_id', campaignIds),
+  ]);
+
+  // 2. Eliminar registros de campaigns
+  const { error } = await supabase
+    .from('campaigns')
+    .delete()
+    .in('id', campaignIds);
+
+  if (error) {
+    console.error('Error al eliminar campañas en lote:', error);
+    throw new Error(`Error al eliminar campañas: ${error.message}`);
+  }
+
+  return { deletedCount: campaignIds.length };
+}

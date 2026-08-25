@@ -9,6 +9,9 @@ interface ContentGridProps {
   onReview: (item: ContentItem) => void;
   onResetFilters?: () => void;
   onAssignCampaign?: (item: ContentItem) => void;
+  onDelete?: (item: ContentItem) => void;
+  selectedItemIds?: string[];
+  onToggleSelect?: (item: ContentItem) => void;
 }
 
 export function ContentGrid({
@@ -17,6 +20,9 @@ export function ContentGrid({
   onReview,
   onResetFilters,
   onAssignCampaign,
+  onDelete,
+  selectedItemIds = [],
+  onToggleSelect,
 }: ContentGridProps) {
   if (isLoading) {
     return (
@@ -78,6 +84,9 @@ export function ContentGrid({
         <ContentCard
           key={item.id}
           item={item}
+          isSelected={selectedItemIds.includes(item.id)}
+          onToggleSelect={onToggleSelect}
+          onDelete={onDelete}
           onReview={onReview}
           onAssignCampaign={onAssignCampaign}
         />

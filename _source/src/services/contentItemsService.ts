@@ -1,6 +1,7 @@
 import { supabase } from '../lib/supabase';
 import { ContentItem, ContentItemUpdateInput, ContentFilterOptions, ProductionBrief } from '../types/contentItem';
 import { createContentVersion } from './contentVersionService';
+import { deleteFromB2 } from '../lib/b2Storage';
 
 const CONTENT_ITEM_SELECT = `
   *,
@@ -244,4 +245,84 @@ export async function scheduleContent(id: string, scheduledAtIso: string): Promi
     console.error(`Error al programar contenido (${id}):`, error);
     throw new Error(`Error al programar contenido: ${error.message}`);
   }
+}
+
+/**
+ * Elimina un contenido individual y sus assets físicos en Backblaze B2 de forma coordinada.
+ */
+export async function deleteContentItem(id: string): Promise<void> {
+  if (!id) throw new Error('id de contenido es requerido');
+
+  // 1. Obtener y eliminar assets físicos asociados específicamente a esta pieza de contenido
+  const { data: assets } = await supabase
+    .from('content_assets')
+    .select('storage_path')
+    .eq('content_item_id', id);
+
+  if (assets && assets.length > 0) {
+    await Promise.allSettled(
+      assets.map(async (a) => {
+        if (a.storage_path) {
+          try {
+            await deleteFromB2(a.storage_path);
+          } catch (b2Err) {
+            console.warn(`Aviso B2 al eliminar asset (${a.storage_path}):`, b2Err);
+          }
+        }
+      })
+    );
+  }
+
+  // 2. Eliminar fila de content_items (cascada a versiones, adaptaciones, outbox y assets)
+  const { error } = await supabase
+    .from('content_items')
+    .delete()
+    .eq('id', id);
+
+  if (error) {
+    console.error(`Error al eliminar contenido (${id}):`, error);
+    throw new Error(`Error al eliminar contenido: ${error.message}`);
+  }
+}
+
+/**
+ * Elimina múltiples piezas de contenido en lote (Bulk Delete) con borrado coordinado en Backblaze B2.
+ */
+export async function deleteContentItemsBulk(ids: string[]): Promise<{ deletedCount: number }> {
+  if (!ids || ids.length === 0) {
+    return { deletedCount: 0 };
+  }
+
+  // 1. Obtener y eliminar assets físicos asociados a estos contenidos
+  const { data: assets } = await supabase
+    .from('content_assets')
+    .select('storage_path')
+    .in('content_item_id', ids);
+
+  if (assets && assets.length > 0) {
+    await Promise.allSettled(
+      assets.map(async (a) => {
+        if (a.storage_path) {
+          try {
+            await deleteFromB2(a.storage_path);
+          } catch (b2Err) {
+            console.warn(`Aviso B2 al eliminar asset (${a.storage_path}):`, b2Err);
+          }
+        }
+      })
+    );
+  }
+
+  // 2. Eliminar registros de content_items
+  const { error } = await supabase
+    .from('content_items')
+    .delete()
+    .in('id', ids);
+
+  if (error) {
+    console.error('Error al eliminar contenidos en lote:', error);
+    throw new Error(`Error al eliminar contenidos: ${error.message}`);
+  }
+
+  return { deletedCount: ids.length };
 }

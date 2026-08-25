@@ -11,7 +11,9 @@ import {
   Flame, 
   ArrowRight,
   FolderTree,
-  FolderPlus
+  FolderPlus,
+  Trash2,
+  Check
 } from 'lucide-react';
 
 interface IdeaCardProps {
@@ -19,6 +21,9 @@ interface IdeaCardProps {
   onProduceContent?: (idea: ContentIdea) => void;
   onNavigateToGeneration?: (generationRunId: string) => void;
   onAssignCampaign?: (idea: ContentIdea) => void;
+  onDelete?: (idea: ContentIdea) => void;
+  isSelected?: boolean;
+  onToggleSelect?: (idea: ContentIdea) => void;
 }
 
 export function IdeaCard({ 
@@ -26,6 +31,9 @@ export function IdeaCard({
   onProduceContent,
   onNavigateToGeneration,
   onAssignCampaign,
+  onDelete,
+  isSelected = false,
+  onToggleSelect,
 }: IdeaCardProps) {
   const getPriorityBadge = (priority: IdeaPriority) => {
     switch (priority) {
@@ -83,10 +91,33 @@ export function IdeaCard({
   };
 
   return (
-    <div className="bg-dark-900 border border-dark-800 rounded-2xl p-5 shadow-lg flex flex-col justify-between space-y-4 hover:border-aura-500/30 transition-all">
+    <div className={`relative bg-dark-900 border rounded-2xl p-5 shadow-lg flex flex-col justify-between space-y-4 transition-all duration-200 group ${
+      isSelected
+        ? 'border-aura-500 ring-2 ring-aura-500/30 bg-aura-500/5'
+        : 'border-dark-800 hover:border-aura-500/30'
+    }`}>
+      {/* Selection Checkbox */}
+      {onToggleSelect && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleSelect(idea);
+          }}
+          className={`absolute top-4 left-4 z-10 w-6 h-6 rounded-lg flex items-center justify-center transition-all shadow-md ${
+            isSelected
+              ? 'bg-aura-600 text-white ring-2 ring-aura-400 border border-aura-400 scale-105'
+              : 'bg-dark-950/80 border border-dark-600/80 text-transparent hover:border-aura-400 hover:text-slate-400/60 hover:bg-dark-900'
+          }`}
+          title={isSelected ? 'Deseleccionar idea' : 'Seleccionar idea'}
+        >
+          <Check className={`w-3.5 h-3.5 stroke-[3] ${isSelected ? 'opacity-100 text-white' : 'opacity-0 hover:opacity-100 text-slate-300'}`} />
+        </button>
+      )}
+
       {/* Header: Badges */}
       <div className="space-y-3">
-        <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className={`flex items-center justify-between gap-2 flex-wrap ${onToggleSelect ? 'pl-8' : ''}`}>
           <div className="flex items-center gap-2">
             {getPriorityBadge(idea.priority)}
             {getStatusBadge(idea.status)}
@@ -185,6 +216,20 @@ export function IdeaCard({
         </span>
 
         <div className="flex items-center gap-2">
+          {onDelete && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(idea);
+              }}
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+              title="Eliminar idea"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
+
           {onAssignCampaign && (
             <Button
               variant="ghost"

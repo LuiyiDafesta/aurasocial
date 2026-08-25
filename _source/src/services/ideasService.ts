@@ -118,3 +118,41 @@ export async function getBrandIdeaPillars(workspaceId?: string | null, brandId?:
 
   return Array.from(pillarsSet);
 }
+
+/**
+ * Elimina una idea de contenido por su ID.
+ */
+export async function deleteIdea(ideaId: string): Promise<void> {
+  if (!ideaId) throw new Error('ideaId es requerido');
+
+  const { error } = await supabase
+    .from('content_ideas')
+    .delete()
+    .eq('id', ideaId);
+
+  if (error) {
+    console.error(`Error al eliminar idea (${ideaId}):`, error);
+    throw new Error(`Error al eliminar idea: ${error.message}`);
+  }
+}
+
+/**
+ * Elimina múltiples ideas de contenido en lote (Bulk Delete).
+ */
+export async function deleteIdeasBulk(ideaIds: string[]): Promise<{ deletedCount: number }> {
+  if (!ideaIds || ideaIds.length === 0) {
+    return { deletedCount: 0 };
+  }
+
+  const { error } = await supabase
+    .from('content_ideas')
+    .delete()
+    .in('id', ideaIds);
+
+  if (error) {
+    console.error('Error al eliminar ideas en lote:', error);
+    throw new Error(`Error al eliminar ideas: ${error.message}`);
+  }
+
+  return { deletedCount: ideaIds.length };
+}

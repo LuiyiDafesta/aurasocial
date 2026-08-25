@@ -3,26 +3,74 @@ import { PlatformBadge } from './PlatformBadge';
 import { StatusBadge } from './StatusBadge';
 import { formatInArgentina } from '../../lib/dateUtils';
 import { Button } from '../common/Button';
-import { Eye, Clock, Calendar, UserCheck, Film, Image as ImageIcon, Clapperboard, Layers, FolderPlus, Target } from 'lucide-react';
+import { 
+  Eye, 
+  Clock, 
+  Calendar, 
+  UserCheck, 
+  Film, 
+  Image as ImageIcon, 
+  Clapperboard, 
+  Layers, 
+  FolderPlus, 
+  Target,
+  Trash2,
+  Check
+} from 'lucide-react';
 import { cn } from '../../lib/utils';
 
 interface ContentCardProps {
   item: ContentItem;
   onReview: (item: ContentItem) => void;
   onAssignCampaign?: (item: ContentItem) => void;
+  onDelete?: (item: ContentItem) => void;
+  isSelected?: boolean;
+  onToggleSelect?: (item: ContentItem) => void;
 }
 
-export function ContentCard({ item, onReview, onAssignCampaign }: ContentCardProps) {
+export function ContentCard({ 
+  item, 
+  onReview, 
+  onAssignCampaign,
+  onDelete,
+  isSelected = false,
+  onToggleSelect,
+}: ContentCardProps) {
   const accountName = item.social_accounts?.account_name || 'Cuenta vinculada';
   const avatarUrl = item.social_accounts?.metadata?.avatar_url;
   const isVideo = item.content_type?.toLowerCase().includes('video') || item.content_type?.toLowerCase().includes('reel');
   const scenesCount = Array.isArray(item.scenes) ? item.scenes.length : 0;
 
   return (
-    <div className="bg-dark-900/90 border border-dark-800/90 hover:border-dark-700/90 rounded-2xl p-5 shadow-lg shadow-black/20 flex flex-col justify-between gap-4 transition-all duration-200 group hover:shadow-xl hover:shadow-aura-950/10">
+    <div className={cn(
+      "relative bg-dark-900/90 border rounded-2xl p-5 shadow-lg shadow-black/20 flex flex-col justify-between gap-4 transition-all duration-200 group hover:shadow-xl hover:shadow-aura-950/10",
+      isSelected
+        ? "border-aura-500 ring-2 ring-aura-500/30 bg-aura-500/5"
+        : "border-dark-800/90 hover:border-dark-700/90"
+    )}>
+      {/* Selection Checkbox */}
+      {onToggleSelect && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleSelect(item);
+          }}
+          className={cn(
+            "absolute top-4 left-4 z-10 w-6 h-6 rounded-lg flex items-center justify-center transition-all shadow-md",
+            isSelected
+              ? "bg-aura-600 text-white ring-2 ring-aura-400 border border-aura-400 scale-105"
+              : "bg-dark-950/80 border border-dark-600/80 text-transparent hover:border-aura-400 hover:text-slate-400/60 hover:bg-dark-900"
+          )}
+          title={isSelected ? "Deseleccionar contenido" : "Seleccionar contenido"}
+        >
+          <Check className={cn("w-3.5 h-3.5 stroke-[3]", isSelected ? "opacity-100 text-white" : "opacity-0 hover:opacity-100 text-slate-300")} />
+        </button>
+      )}
+
       {/* Top Header: Platform, Type, Account and Status */}
       <div className="space-y-3">
-        <div className="flex items-center justify-between gap-2">
+        <div className={cn("flex items-center justify-between gap-2", onToggleSelect && "pl-8")}>
           <div className="flex items-center gap-2 flex-wrap">
             <PlatformBadge platform={item.platform} size="sm" />
             <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase px-2 py-0.5 rounded-md bg-dark-800 text-slate-300 border border-dark-700">
@@ -97,7 +145,7 @@ export function ContentCard({ item, onReview, onAssignCampaign }: ContentCardPro
         )}
       </div>
 
-      {/* Footer: Argentina Timestamps & Review Button */}
+      {/* Footer: Argentina Timestamps & Actions */}
       <div className="pt-3 border-t border-dark-800/80 flex items-center justify-between gap-3">
         <div className="space-y-0.5 text-[11px] text-slate-400">
           <div className="flex items-center gap-1.5">
@@ -117,6 +165,20 @@ export function ContentCard({ item, onReview, onAssignCampaign }: ContentCardPro
         </div>
 
         <div className="flex items-center gap-2">
+          {onDelete && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(item);
+              }}
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+              title="Eliminar contenido"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
+
           {onAssignCampaign && (
             <Button
               variant="ghost"

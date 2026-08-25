@@ -9,7 +9,9 @@ import {
   ArrowRight,
   Sparkles,
   Edit2,
-  Target
+  Target,
+  Trash2,
+  Check
 } from 'lucide-react';
 import { Button } from '../common/Button';
 
@@ -17,9 +19,19 @@ interface CampaignCardProps {
   campaign: Campaign;
   onSelect: (campaign: Campaign) => void;
   onEdit?: (campaign: Campaign) => void;
+  onDelete?: (campaign: Campaign) => void;
+  isSelected?: boolean;
+  onToggleSelect?: (campaign: Campaign) => void;
 }
 
-export function CampaignCard({ campaign, onSelect, onEdit }: CampaignCardProps) {
+export function CampaignCard({ 
+  campaign, 
+  onSelect, 
+  onEdit,
+  onDelete,
+  isSelected = false,
+  onToggleSelect,
+}: CampaignCardProps) {
   const getStatusBadge = (status: CampaignStatus) => {
     switch (status) {
       case 'active':
@@ -86,7 +98,11 @@ export function CampaignCard({ campaign, onSelect, onEdit }: CampaignCardProps) 
 
   return (
     <div 
-      className="group relative bg-dark-900/90 hover:bg-dark-850 border border-dark-800 hover:border-aura-500/50 rounded-2xl p-6 transition-all duration-300 flex flex-col justify-between shadow-xl shadow-black/30 hover:shadow-2xl hover:shadow-aura-500/10 overflow-hidden"
+      className={`group relative bg-dark-900/90 hover:bg-dark-850 border rounded-2xl p-6 transition-all duration-300 flex flex-col justify-between shadow-xl shadow-black/30 hover:shadow-2xl hover:shadow-aura-500/10 overflow-hidden ${
+        isSelected
+          ? 'border-aura-500 ring-2 ring-aura-500/30 bg-aura-500/5'
+          : 'border-dark-800 hover:border-aura-500/50'
+      }`}
     >
       {/* Top Status Gradient Bar */}
       <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r ${getTopGradient(campaign.status)}`} />
@@ -95,16 +111,49 @@ export function CampaignCard({ campaign, onSelect, onEdit }: CampaignCardProps) 
       <div className="absolute top-0 right-0 w-48 h-48 bg-aura-500/5 rounded-full blur-3xl group-hover:bg-aura-500/10 transition-all pointer-events-none" />
 
       <div>
-        {/* Top Header Row: Slug + Status + Edit Action */}
+        {/* Top Header Row: Selection Checkbox + Slug + Status + Edit/Delete Actions */}
         <div className="flex items-center justify-between gap-3 mb-3">
           <div className="flex items-center gap-2 min-w-0">
+            {onToggleSelect && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleSelect(campaign);
+                }}
+                className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all shadow-md shrink-0 ${
+                  isSelected
+                    ? 'bg-aura-600 text-white ring-2 ring-aura-400 border border-aura-400 scale-105'
+                    : 'bg-dark-950/80 border border-dark-600/80 text-transparent hover:border-aura-400 hover:text-slate-400/60 hover:bg-dark-900'
+                }`}
+                title={isSelected ? 'Deseleccionar campaña' : 'Seleccionar campaña'}
+              >
+                <Check className={`w-3.5 h-3.5 stroke-[3] ${isSelected ? 'opacity-100 text-white' : 'opacity-0 hover:opacity-100 text-slate-300'}`} />
+              </button>
+            )}
+
             <span className="text-[11px] font-mono font-semibold text-aura-400 bg-aura-500/10 px-2.5 py-0.5 rounded-lg border border-aura-500/20 truncate">
               /{campaign.slug}
             </span>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1.5 shrink-0">
             {getStatusBadge(campaign.status)}
+
+            {onDelete && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete(campaign);
+                }}
+                className="w-7 h-7 rounded-lg bg-dark-950/80 hover:bg-rose-500/10 text-slate-400 hover:text-rose-400 flex items-center justify-center border border-dark-800 transition-colors"
+                title="Eliminar campaña"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            )}
+
             {onEdit && (
               <button
                 type="button"

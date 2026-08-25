@@ -14,9 +14,10 @@ import { ProduceContentModal } from '../components/contents/ProduceContentModal'
 import { AssignToCampaignModal } from '../components/campaigns/AssignToCampaignModal';
 import { IdeaPriority, ContentIdea, IdeaSortBy } from '../types/contentIdea';
 import { GenerationContext, GenerationRun } from '../types/generationRun';
-import { getBrandIdeaPillars } from '../services/ideasService';
+import { getBrandIdeaPillars, deleteIdea, deleteIdeasBulk } from '../services/ideasService';
 import { Button } from '../components/common/Button';
 import { Input } from '../components/common/Input';
+import { ConfirmDialog } from '../components/common/ConfirmDialog';
 import { useToast } from '../hooks/useToast';
 import { 
   Sparkles, 
@@ -27,7 +28,10 @@ import {
   Layers,
   History,
   ArrowUpDown,
-  Filter
+  Filter,
+  Trash2,
+  CheckSquare,
+  Square
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
@@ -68,7 +72,14 @@ export function IdeasPage({
   const [ideasPage, setIdeasPage] = useState<number>(1);
   const [runsPage, setRunsPage] = useState<number>(1);
 
-  // Modals & Inspection
+  // Selección Masiva y Eliminación
+  const [selectedIdeaIds, setSelectedIdeaIds] = useState<string[]>([]);
+  const [ideaToDelete, setIdeaToDelete] = useState<ContentIdea | null>(null);
+  const [isBulkConfirmOpen, setIsBulkConfirmOpen] = useState<boolean>(false);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState<boolean>(false);
+
+  // Modales & Inspection
   const [isGenerateModalOpen, setIsGenerateModalOpen] = useState<boolean>(false);
   const [inspectedRun, setInspectedRun] = useState<GenerationRun | null>(null);
   const [producingIdea, setProducingIdea] = useState<ContentIdea | null>(null);
@@ -78,12 +89,18 @@ export function IdeasPage({
   const { toast } = useToast();
   const brandId = currentBrand?.id;
 
-  // Reset pagination and active generation view when brand changes
+  // Reset pagination, selection and active generation view when brand changes
   useEffect(() => {
     setActiveWorkspaceGeneration(null);
+    setSelectedIdeaIds([]);
     setIdeasPage(1);
     setRunsPage(1);
   }, [brandId]);
+
+  // Reset selection on filter or page change
+  useEffect(() => {
+    setSelectedIdeaIds([]);
+  }, [ideasPage, priorityFilter, pillarFilter, formatFilter, debouncedIdeaSearch]);
 
   // Debounce search query
   useEffect(() => {
@@ -194,6 +211,58 @@ export function IdeasPage({
       setActiveWorkspaceGeneration(matchingRun);
     } else {
       toast('Sesión de generación localizada', { type: 'info' });
+    }
+  };
+
+  // Handlers para Selección Múltiple y Eliminación
+  const handleToggleSelectIdea = (idea: ContentIdea) => {
+    setSelectedIdeaIds((prev) =>
+      prev.includes(idea.id)
+        ? prev.filter((id) => id !== idea.id)
+        : [...prev, idea.id]
+    );
+  };
+
+  const isAllCurrentPageSelected = ideas.length > 0 && ideas.every((i) => selectedIdeaIds.includes(i.id));
+
+  const handleToggleSelectAllIdeas = () => {
+    const pageIds = ideas.map((i) => i.id);
+    if (isAllCurrentPageSelected) {
+      setSelectedIdeaIds((prev) => prev.filter((id) => !pageIds.includes(id)));
+    } else {
+      setSelectedIdeaIds((prev) => Array.from(new Set([...prev, ...pageIds])));
+    }
+  };
+
+  const handleDeleteIdeaConfirm = async () => {
+    if (!ideaToDelete || isDeleting) return;
+    try {
+      setIsDeleting(true);
+      await deleteIdea(ideaToDelete.id);
+      toast(`Idea "${ideaToDelete.title}" eliminada correctamente`, { type: 'success' });
+      setIdeaToDelete(null);
+      setSelectedIdeaIds((prev) => prev.filter((id) => id !== ideaToDelete.id));
+      refreshIdeas();
+    } catch (err: any) {
+      toast('Error al eliminar idea', { type: 'error', description: err.message });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleBulkDeleteIdeasConfirm = async () => {
+    if (selectedIdeaIds.length === 0 || isBulkDeleting) return;
+    try {
+      setIsBulkDeleting(true);
+      const res = await deleteIdeasBulk(selectedIdeaIds);
+      toast(`Se eliminaron ${res.deletedCount} ideas correctamente`, { type: 'success' });
+      setSelectedIdeaIds([]);
+      setIsBulkConfirmOpen(false);
+      refreshIdeas();
+    } catch (err: any) {
+      toast('Error al eliminar ideas en lote', { type: 'error', description: err.message });
+    } finally {
+      setIsBulkDeleting(false);
     }
   };
 
@@ -415,6 +484,46 @@ export function IdeasPage({
           {/* ========================================================================= */}
           {activeTab === 'ideas' && (
             <div className="space-y-6">
+              {/* Bulk Action Floating Toolbar */}
+              {selectedIdeaIds.length > 0 && (
+                <div className="bg-dark-900/95 border border-aura-500/40 rounded-2xl p-4 shadow-2xl flex items-center justify-between gap-4 flex-wrap animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-aura-500/15 border border-aura-500/30 flex items-center justify-center text-aura-400 font-bold text-xs">
+                      {selectedIdeaIds.length}
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-white">
+                        {selectedIdeaIds.length} {selectedIdeaIds.length === 1 ? 'idea seleccionada' : 'ideas seleccionadas'}
+                      </h4>
+                      <p className="text-xs text-slate-400">
+                        Podés eliminarlas de tu banco de ideas simultáneamente.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSelectedIdeaIds([])}
+                      className="text-xs text-slate-400 hover:text-white"
+                    >
+                      Cancelar selección
+                    </Button>
+
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      onClick={() => setIsBulkConfirmOpen(true)}
+                      leftIcon={<Trash2 className="w-3.5 h-3.5" />}
+                      className="text-xs bg-rose-600 hover:bg-rose-500 text-white font-semibold shadow-lg shadow-rose-950/30"
+                    >
+                      Eliminar seleccionadas ({selectedIdeaIds.length})
+                    </Button>
+                  </div>
+                </div>
+              )}
+
               {/* Ideas Filter Bar */}
               <div className="flex flex-col gap-3 bg-dark-900/60 p-4 rounded-2xl border border-dark-800">
                 <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
@@ -428,7 +537,19 @@ export function IdeasPage({
                     />
                   </div>
 
-                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap justify-end">
+                    {ideas.length > 0 && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleToggleSelectAllIdeas}
+                        leftIcon={isAllCurrentPageSelected ? <CheckSquare className="w-3.5 h-3.5 text-aura-400" /> : <Square className="w-3.5 h-3.5" />}
+                        className="text-xs h-9 bg-dark-950 border-dark-800 hover:bg-dark-900"
+                      >
+                        {isAllCurrentPageSelected ? 'Deseleccionar Página' : 'Seleccionar Todos'}
+                      </Button>
+                    )}
+
                     <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-dark-950 border border-dark-800 text-xs text-slate-400">
                       <ArrowUpDown className="w-3.5 h-3.5 text-aura-400" />
                       <span>Ordenar:</span>
@@ -521,6 +642,9 @@ export function IdeasPage({
                       <IdeaCard
                         key={idea.id}
                         idea={idea}
+                        isSelected={selectedIdeaIds.includes(idea.id)}
+                        onToggleSelect={handleToggleSelectIdea}
+                        onDelete={(i) => setIdeaToDelete(i)}
                         onProduceContent={handleProduceContent}
                         onNavigateToGeneration={handleNavigateToGenerationFromIdea}
                         onAssignCampaign={(i) => setIdeaToAssignCampaign(i)}
@@ -616,6 +740,32 @@ export function IdeasPage({
           }}
         />
       )}
+
+      {/* Diálogo de Confirmación para Eliminación Individual de Idea */}
+      <ConfirmDialog
+        isOpen={!!ideaToDelete}
+        onClose={() => setIdeaToDelete(null)}
+        onConfirm={handleDeleteIdeaConfirm}
+        title={`¿Eliminar idea "${ideaToDelete?.title}"?`}
+        message="Esta acción eliminará de forma permanente la idea estratégica seleccionada. No se puede deshacer."
+        confirmText={isDeleting ? 'Eliminando...' : 'Eliminar Idea'}
+        cancelText="Cancelar"
+        type="danger"
+        isLoading={isDeleting}
+      />
+
+      {/* Diálogo de Confirmación para Eliminación Masiva de Ideas */}
+      <ConfirmDialog
+        isOpen={isBulkConfirmOpen}
+        onClose={() => setIsBulkConfirmOpen(false)}
+        onConfirm={handleBulkDeleteIdeasConfirm}
+        title={`¿Eliminar ${selectedIdeaIds.length} ideas seleccionadas?`}
+        message={`Esta acción eliminará de forma permanente las ${selectedIdeaIds.length} ideas seleccionadas de tu banco estratégico. No se puede revertir.`}
+        confirmText={isBulkDeleting ? 'Eliminando en lote...' : `Eliminar ${selectedIdeaIds.length} Ideas`}
+        cancelText="Cancelar"
+        type="danger"
+        isLoading={isBulkDeleting}
+      />
     </div>
   );
 }
