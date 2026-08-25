@@ -324,8 +324,32 @@ export class SocialProviderHealthService {
       .select('*')
       .single();
 
+    let boundRecord = updated;
     if (updateErr || !updated) {
-      throw new Error(`Error al vincular cuenta a marca: ${updateErr?.message}`);
+      try {
+        const bindRes = await fetch('/api/social/accounts/bind', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-workspace-id': workspaceId,
+            'x-brand-id': brandId,
+          },
+          body: JSON.stringify({
+            workspaceId,
+            brandId,
+            provider: conn.provider || 'socialit',
+            provider_account_id: conn.provider_account_id || conn.account_id || conn.id,
+          }),
+        });
+        const bindJson = await bindRes.json();
+        if (bindJson.success && bindJson.data?.connection) {
+          boundRecord = bindJson.data.connection;
+        } else {
+          throw new Error(bindJson.error || updateErr?.message);
+        }
+      } catch (phpErr: any) {
+        throw new Error(`Error al vincular cuenta a marca: ${phpErr.message || updateErr?.message}`);
+      }
     }
 
     logAuditEvent({
@@ -335,10 +359,10 @@ export class SocialProviderHealthService {
       connection_id: connectionId,
       platform: conn.platform,
       provider: conn.provider || 'socialit',
-      metadata: { brand_name: brand.name, account_name: conn.account_name },
+      metadata: { brand_name: brand?.name || 'Brand', account_name: conn.account_name },
     });
 
-    return sanitizeSocialConnectionForClient(updated as SocialConnection);
+    return sanitizeSocialConnectionForClient((boundRecord || conn) as SocialConnection);
   }
 
   /**
@@ -357,11 +381,10 @@ export class SocialProviderHealthService {
       .select('*')
       .eq('id', connectionId)
       .eq('workspace_id', workspaceId)
-      .eq('brand_id', currentBrandId)
       .single();
 
     if (connErr || !conn) {
-      throw new Error(`VALIDATION_ERROR: La cuenta ${connectionId} no pertenece a la marca ${currentBrandId} o workspace ${workspaceId}.`);
+      throw new Error(`VALIDATION_ERROR: La cuenta ${connectionId} no pertenece al workspace ${workspaceId}.`);
     }
 
     const { data: updated, error: updateErr } = await supabase
@@ -374,8 +397,20 @@ export class SocialProviderHealthService {
       .select('*')
       .single();
 
+    let unboundRecord = updated;
     if (updateErr || !updated) {
-      throw new Error(`Error al desvincular cuenta: ${updateErr?.message}`);
+      try {
+        const unbindRes = await fetch(`/api/social/connections/${encodeURIComponent(connectionId)}/disconnect`, {
+          method: 'POST',
+        });
+        const unbindJson = await unbindRes.json();
+        if (!unbindJson.success) {
+          throw new Error(unbindJson.error || updateErr?.message);
+        }
+        unboundRecord = { ...conn, brand_id: null };
+      } catch (phpErr: any) {
+        throw new Error(`Error al desvincular cuenta: ${phpErr.message || updateErr?.message}`);
+      }
     }
 
     logAuditEvent({
@@ -387,7 +422,7 @@ export class SocialProviderHealthService {
       provider: conn.provider || 'socialit',
     });
 
-    return sanitizeSocialConnectionForClient(updated as SocialConnection);
+    return sanitizeSocialConnectionForClient((unboundRecord || conn) as SocialConnection);
   }
 
   /**
