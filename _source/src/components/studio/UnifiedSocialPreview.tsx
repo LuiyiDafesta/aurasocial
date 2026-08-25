@@ -15,7 +15,9 @@ import {
   Sparkles,
   MoveVertical,
   Activity,
-  Scissors
+  Scissors,
+  Volume2,
+  VolumeX
 } from 'lucide-react';
 import { getB2CdnUrl } from '../../lib/b2Storage';
 
@@ -23,6 +25,7 @@ interface TrimmedVideoPlayerProps {
   mediaUrl: string;
   startSeconds: number;
   endSeconds: number;
+  isMuted?: boolean;
   className?: string;
 }
 
@@ -30,6 +33,7 @@ function TrimmedVideoPlayer({
   mediaUrl,
   startSeconds,
   endSeconds,
+  isMuted = true,
   className = 'w-full h-full object-cover',
 }: TrimmedVideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -67,6 +71,12 @@ function TrimmedVideoPlayer({
     }
   }, [startSeconds, endSeconds, mediaUrl]);
 
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.muted = isMuted;
+  }, [isMuted]);
+
   return (
     <video
       ref={videoRef}
@@ -74,7 +84,7 @@ function TrimmedVideoPlayer({
       onLoadedMetadata={handleLoadedMetadata}
       onTimeUpdate={handleTimeUpdate}
       autoPlay
-      muted
+      muted={isMuted}
       playsInline
       className={className}
     />
@@ -101,6 +111,7 @@ export function UnifiedSocialPreview({
   const [showSafeArea, setShowSafeArea] = useState<boolean>(false);
   const [isExpandedCaption, setIsExpandedCaption] = useState<boolean>(false);
   const [cdnCacheStatus, setCdnCacheStatus] = useState<string>('DETECTING');
+  const [previewMuted, setPreviewMuted] = useState<boolean>(true);
 
   const platform = pkg.platform || activeAdaptation?.platform || 'instagram';
   const format = pkg.format || activeAdaptation?.format || 'reel';
@@ -220,6 +231,22 @@ export function UnifiedSocialPreview({
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Audio Mute/Unmute in Live Preview */}
+          {isVideo && (
+            <button
+              onClick={() => setPreviewMuted(!previewMuted)}
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-semibold transition-colors ${
+                !previewMuted
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                  : 'bg-dark-900 border border-dark-800 text-slate-400 hover:text-white'
+              }`}
+              title={previewMuted ? 'Activar sonido del preview' : 'Silenciar preview'}
+            >
+              {!previewMuted ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
+              {!previewMuted ? 'Audio ON' : 'Audio OFF'}
+            </button>
+          )}
+
           <button
             onClick={() => setShowSafeArea(!showSafeArea)}
             className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-semibold transition-colors ${
@@ -248,6 +275,7 @@ export function UnifiedSocialPreview({
                   mediaUrl={mediaUrl}
                   startSeconds={startSec}
                   endSeconds={endSec}
+                  isMuted={previewMuted}
                   className="w-full h-full object-cover"
                 />
               </div>
@@ -416,6 +444,7 @@ export function UnifiedSocialPreview({
                   mediaUrl={mediaUrl}
                   startSeconds={startSec}
                   endSeconds={endSec}
+                  isMuted={previewMuted}
                   className="w-full h-full object-cover"
                 />
               ) : (

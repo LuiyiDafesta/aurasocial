@@ -40,15 +40,16 @@ export function InteractiveVideoTrimmer({
   onRangeChange,
   isReadOnly = false,
 }: InteractiveVideoTrimmerProps) {
-  const safeTotalDuration = Math.max(1, assetDuration || 30);
+  const [detectedDuration, setDetectedDuration] = useState<number | null>(null);
+  const totalDuration = Math.max(1, detectedDuration || assetDuration || 30);
 
   const initialStart = typeof initialStartSeconds === 'number' && initialStartSeconds >= 0
     ? initialStartSeconds
     : 0;
 
   const initialEnd = typeof initialEndSeconds === 'number' && initialEndSeconds > initialStart
-    ? Math.min(safeTotalDuration, initialEndSeconds)
-    : safeTotalDuration;
+    ? Math.min(totalDuration, initialEndSeconds)
+    : totalDuration;
 
   const [startSec, setStartSec] = useState<number>(initialStart);
   const [endSec, setEndSec] = useState<number>(initialEnd);
@@ -70,13 +71,26 @@ export function InteractiveVideoTrimmer({
   // Persistir cambios hacia el parent/Supabase
   const commitRangeChange = useCallback((newStart: number, newEnd: number) => {
     const s = Math.max(0, parseFloat(newStart.toFixed(1)));
-    const e = Math.min(safeTotalDuration, parseFloat(newEnd.toFixed(1)));
+    const e = Math.min(totalDuration, parseFloat(newEnd.toFixed(1)));
     if (e > s && onRangeChange) {
       onRangeChange(sceneNumber, s, e);
     }
-  }, [safeTotalDuration, sceneNumber, onRangeChange]);
+  }, [totalDuration, sceneNumber, onRangeChange]);
 
-  // Manejo de Reproducción
+  const handleLoadedMetadata = (e: React.SyntheticEvent<HTMLVideoElement>) => {
+    const video = e.currentTarget;
+    if (video.duration && !isNaN(video.duration) && video.duration > 0) {
+      const realDur = parseFloat(video.duration.toFixed(1));
+      setDetectedDuration(realDur);
+      // Si endSec quedó en 5s pero el video real dura mucho más (ej. 47s), expandir endSec
+      if (endSec <= 5 && realDur > 5 && (initialEndSeconds === null || initialEndSeconds === undefined || initialEndSeconds === 5)) {
+        setEndSec(realDur);
+        commitRangeChange(startSec, realDur);
+      }
+    }
+  };
+
+  // Manejo de Reproducción con audio sincronizado
   const togglePlay = () => {
     const video = videoRef.current;
     if (!video) return;
@@ -137,8 +151,8 @@ export function InteractiveVideoTrimmer({
     
     const offsetX = Math.max(0, Math.min(rect.width, clientX - rect.left));
     const ratio = offsetX / rect.width;
-    return parseFloat((ratio * safeTotalDuration).toFixed(1));
-  }, [safeTotalDuration]);
+    return parseFloat((ratio * totalDuration).toFixed(1));
+  }, [totalDuration]);
 
   const handleTimelineMouseDown = (e: React.MouseEvent) => {
     if (isReadOnly) return;
@@ -164,7 +178,7 @@ export function InteractiveVideoTrimmer({
         if (videoRef.current) videoRef.current.currentTime = clampedStart;
         setCurrentTime(clampedStart);
       } else if (isDraggingRef.current === 'end') {
-        const clampedEnd = Math.min(safeTotalDuration, Math.max(startSec + 0.5, t));
+        const clampedEnd = Math.min(totalDuration, Math.max(startSec + 0.5, t));
         setEndSec(clampedEnd);
         if (videoRef.current) videoRef.current.currentTime = clampedEnd;
         setCurrentTime(clampedEnd);
@@ -210,7 +224,7 @@ export function InteractiveVideoTrimmer({
   };
 
   const adjustEnd = (delta: number) => {
-    const newEnd = Math.min(safeTotalDuration, Math.max(startSec + 0.5, parseFloat((endSec + delta).toFixed(1))));
+    const newEnd = Math.min(totalDuration, Math.max(startSec + 0.5, parseFloat((endSec + delta).toFixed(1))));
     setEndSec(newEnd);
     if (videoRef.current) videoRef.current.currentTime = newEnd;
     setCurrentTime(newEnd);
@@ -218,26 +232,14 @@ export function InteractiveVideoTrimmer({
   };
 
   // Porcentajes para renderizado de CSS
-  const startPercent = Math.max(0, Math.min(100, (startSec / safeTotalDuration) * 100));
-  const endPercent = Math.max(0, Math.min(100, (endSec / safeTotalDuration) * 100));
-  const playheadPercent = Math.max(0, Math.min(100, (currentTime / safeTotalDuration) * 100));
+  const startPercent = Math.max(0, Math.min(100, (startSec / totalDuration) * 100));
+  const endPercent = Math.max(0, Math.min(100, (endSec / totalDuration) * 100));
+  const playheadPercent = Math.max(0, Math.min(100, (currentTime / totalDuration) * 100));
   const rangeDuration = Math.max(0.1, parseFloat((endSec - startSec).toFixed(1)));
 
   return (
-    <div className="p-3 bg-dark-950/80 rounded-2xl border border-dark-800/80 space-y-3 shadow-inner">
-      {/* Hidden Audio/Video player element to provide synchronized audio stream */}
-      {mediaUrl && (
-        <video
-          ref={videoRef}
-          src={mediaUrl}
-          onTimeUpdate={handleTimeUpdate}
-          onEnded={() => setIsPlaying(false)}
-          playsInline
-          className="hidden"
-        />
-      )}
-
-      {/* Header Bar: Status & Controls */}
+    <div className="p-3.5 bg-dark-950/90 rounded-2xl border border-dark-800 space-y-3 shadow-xl">
+      {/* Header Bar */}
       <div className="flex items-center justify-between text-xs">
         <div className="flex items-center gap-1.5 font-bold text-aura-400">
           <Scissors className="w-3.5 h-3.5" />
@@ -248,9 +250,50 @@ export function InteractiveVideoTrimmer({
         <div className="flex items-center gap-2 font-mono text-[11px] bg-dark-900 px-2 py-0.5 rounded-lg border border-dark-800">
           <span className="text-white font-bold">{formatTimeSec(currentTime)}</span>
           <span className="text-slate-500">/</span>
-          <span className="text-slate-400">{formatTimeSec(safeTotalDuration)}</span>
+          <span className="text-slate-400">{formatTimeSec(totalDuration)}</span>
         </div>
       </div>
+
+      {/* Synchronized Video Monitor with Audio */}
+      {mediaUrl && (
+        <div className="relative w-full aspect-video bg-black rounded-xl overflow-hidden border border-dark-800 shadow-inner flex items-center justify-center group">
+          <video
+            ref={videoRef}
+            src={mediaUrl}
+            onLoadedMetadata={handleLoadedMetadata}
+            onTimeUpdate={handleTimeUpdate}
+            onEnded={() => {
+              setIsPlaying(false);
+              setIsClipPlaying(false);
+            }}
+            playsInline
+            className="w-full h-full object-contain"
+          />
+
+          {/* Quick Play Overlay Button */}
+          {!isPlaying && (
+            <button
+              type="button"
+              onClick={togglePlay}
+              className="absolute inset-0 m-auto w-12 h-12 rounded-full bg-black/60 hover:bg-aura-600/90 text-white flex items-center justify-center transition-all backdrop-blur-sm shadow-2xl border border-white/20 hover:scale-110 active:scale-95"
+            >
+              <Play className="w-5 h-5 ml-0.5 text-white" />
+            </button>
+          )}
+
+          {/* Live Monitor Badges */}
+          <div className="absolute top-2 left-2 flex items-center gap-1.5 pointer-events-none">
+            <span className="px-2 py-0.5 rounded-md bg-black/70 backdrop-blur-md text-[10px] font-mono text-white border border-white/10 font-bold">
+              {formatTimeSec(currentTime)}
+            </span>
+            {isClipPlaying && (
+              <span className="px-2 py-0.5 rounded-md bg-aura-600/90 backdrop-blur-md text-[9px] font-bold text-white uppercase tracking-wider animate-pulse">
+                Clip Activo ({rangeDuration}s)
+              </span>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Interactive Timeline Track */}
       <div className="space-y-1.5">
@@ -259,16 +302,16 @@ export function InteractiveVideoTrimmer({
           onMouseDown={handleTimelineMouseDown}
           className="relative h-9 bg-dark-900 rounded-xl border border-dark-800 cursor-pointer select-none overflow-hidden group"
         >
-          {/* Background Ruler Grid / Waveform Base */}
+          {/* Background Ruler Grid */}
           <div className="absolute inset-0 flex items-center justify-between px-2 opacity-15 pointer-events-none">
-            {[...Array(16)].map((_, i) => (
+            {[...Array(20)].map((_, i) => (
               <div key={i} className="w-0.5 h-4 bg-slate-400 rounded-full" />
             ))}
           </div>
 
           {/* Active Highlight Range Area */}
           <div
-            className="absolute top-0 bottom-0 bg-aura-500/25 border-y border-aura-400/50 backdrop-blur-[1px] transition-[left,width] duration-75"
+            className="absolute top-0 bottom-0 bg-aura-500/30 border-y-2 border-aura-400 backdrop-blur-[1px] transition-[left,width] duration-75"
             style={{
               left: `${startPercent}%`,
               width: `${endPercent - startPercent}%`,
@@ -280,10 +323,10 @@ export function InteractiveVideoTrimmer({
             onMouseDown={(e) => handleStartDrag('start', e)}
             onTouchStart={(e) => handleStartDrag('start', e)}
             title={`Inicio: ${formatTimeSec(startSec)} (Arrastrá para ajustar)`}
-            className="absolute top-0 bottom-0 w-3 -ml-1.5 bg-aura-500 hover:bg-aura-400 cursor-ew-resize flex items-center justify-center rounded-l shadow-lg z-20 group-hover:scale-105 transition-transform"
+            className="absolute top-0 bottom-0 w-3.5 -ml-[7px] bg-aura-500 hover:bg-aura-400 cursor-ew-resize flex items-center justify-center rounded shadow-lg z-20 hover:scale-110 transition-transform"
             style={{ left: `${startPercent}%` }}
           >
-            <div className="w-0.5 h-4 bg-white/90 rounded-full" />
+            <div className="w-0.5 h-4 bg-white rounded-full" />
           </div>
 
           {/* End Handle [END] */}
@@ -291,10 +334,10 @@ export function InteractiveVideoTrimmer({
             onMouseDown={(e) => handleStartDrag('end', e)}
             onTouchStart={(e) => handleStartDrag('end', e)}
             title={`Fin: ${formatTimeSec(endSec)} (Arrastrá para ajustar)`}
-            className="absolute top-0 bottom-0 w-3 -ml-1.5 bg-aura-500 hover:bg-aura-400 cursor-ew-resize flex items-center justify-center rounded-r shadow-lg z-20 group-hover:scale-105 transition-transform"
+            className="absolute top-0 bottom-0 w-3.5 -ml-[7px] bg-aura-500 hover:bg-aura-400 cursor-ew-resize flex items-center justify-center rounded shadow-lg z-20 hover:scale-110 transition-transform"
             style={{ left: `${endPercent}%` }}
           >
-            <div className="w-0.5 h-4 bg-white/90 rounded-full" />
+            <div className="w-0.5 h-4 bg-white rounded-full" />
           </div>
 
           {/* Playhead Needle Indicator */}
@@ -311,10 +354,10 @@ export function InteractiveVideoTrimmer({
         {/* Timeline Range Time Indicators */}
         <div className="flex items-center justify-between text-[10px] font-mono text-slate-500 px-0.5">
           <span>00:00.0</span>
-          <span className="text-aura-300 font-bold bg-dark-900/90 px-1.5 py-0.5 rounded border border-dark-800">
+          <span className="text-aura-300 font-bold bg-dark-900/90 px-2 py-0.5 rounded border border-dark-800">
             {formatTimeSec(startSec)} → {formatTimeSec(endSec)}
           </span>
-          <span>{formatTimeSec(safeTotalDuration)}</span>
+          <span>{formatTimeSec(totalDuration)}</span>
         </div>
       </div>
 
@@ -443,7 +486,7 @@ export function InteractiveVideoTrimmer({
             </button>
             <button
               type="button"
-              disabled={isReadOnly || endSec >= safeTotalDuration}
+              disabled={isReadOnly || endSec >= totalDuration}
               onClick={() => adjustEnd(0.1)}
               className="px-1.5 py-0.5 text-[10px] font-mono bg-dark-950 hover:bg-dark-800 text-slate-300 rounded border border-dark-800 disabled:opacity-30"
               title="Sumar 0.1s"
@@ -452,7 +495,7 @@ export function InteractiveVideoTrimmer({
             </button>
             <button
               type="button"
-              disabled={isReadOnly || endSec >= safeTotalDuration}
+              disabled={isReadOnly || endSec >= totalDuration}
               onClick={() => adjustEnd(1)}
               className="px-1.5 py-0.5 text-[10px] font-mono bg-dark-950 hover:bg-dark-800 text-slate-300 rounded border border-dark-800 disabled:opacity-30"
               title="Sumar 1 segundo"
