@@ -12,7 +12,8 @@ import {
   FolderTree, 
   Layers, 
   Target,
-  Sparkles
+  Sparkles,
+  Check
 } from 'lucide-react';
 import { useToast } from '../../hooks/useToast';
 
@@ -22,6 +23,7 @@ interface AssetCardProps {
   onViewDetails: (asset: ContentAsset) => void;
   onDelete: (asset: ContentAsset) => void;
   onSelect?: (asset: ContentAsset) => void;
+  onToggleSelect?: (asset: ContentAsset) => void;
   isSelectable?: boolean;
   isSelected?: boolean;
 }
@@ -32,6 +34,7 @@ export function AssetCard({
   onViewDetails,
   onDelete,
   onSelect,
+  onToggleSelect,
   isSelectable = false,
   isSelected = false,
 }: AssetCardProps) {
@@ -99,6 +102,25 @@ export function AssetCard({
         onClick={() => onPreview(asset)}
         className="relative aspect-video bg-dark-950 rounded-xl overflow-hidden border border-dark-800/80 flex items-center justify-center cursor-pointer group-hover:border-aura-500/30 transition-colors"
       >
+        {/* Checkbox de Selección Masiva / Individual */}
+        {(onToggleSelect || isSelectable) && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleSelect ? onToggleSelect(asset) : onSelect?.(asset);
+            }}
+            className={`absolute top-2.5 left-2.5 z-20 w-6 h-6 rounded-lg flex items-center justify-center transition-all shadow-lg ${
+              isSelected
+                ? 'bg-aura-600 text-white ring-2 ring-aura-400 border border-aura-400 scale-105'
+                : 'bg-dark-950/80 border border-dark-600/80 text-transparent hover:border-aura-400 hover:text-slate-400/60 hover:bg-dark-900'
+            }`}
+            title={isSelected ? 'Deseleccionar asset' : 'Seleccionar asset'}
+          >
+            <Check className={`w-3.5 h-3.5 stroke-[3] ${isSelected ? 'opacity-100 text-white' : 'opacity-0 hover:opacity-100 text-slate-300'}`} />
+          </button>
+        )}
+
         {isImage && asset.signed_url ? (
           <img
             src={asset.signed_url}

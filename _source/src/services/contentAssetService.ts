@@ -404,6 +404,62 @@ export async function deleteAsset(assetId: string): Promise<void> {
 }
 
 /**
+ * Elimina múltiples assets en lote (Bulk Delete) en cascada:
+ * 1. Elimina todos los archivos físicos en Backblaze B2 Storage.
+ * 2. Elimina todas las filas de la tabla content_assets en Supabase PostgreSQL.
+ */
+export async function deleteAssetsBulk(
+  assetIds: string[]
+): Promise<{ deletedCount: number; errors: string[] }> {
+  if (!assetIds || assetIds.length === 0) {
+    return { deletedCount: 0, errors: [] };
+  }
+
+  // 1. Obtener registros para conocer los storage_paths
+  const { data: assets, error: fetchError } = await supabase
+    .from('content_assets')
+    .select('id, storage_bucket, storage_path')
+    .in('id', assetIds);
+
+  if (fetchError || !assets) {
+    console.error('Error al consultar assets para eliminación masiva:', fetchError);
+    throw new Error(`Error al consultar assets: ${fetchError?.message || 'desconocido'}`);
+  }
+
+  const errors: string[] = [];
+
+  // 2. Eliminar en paralelo los archivos físicos en Backblaze B2
+  await Promise.allSettled(
+    assets.map(async (asset) => {
+      try {
+        if (asset.storage_path) {
+          await deleteFromB2(asset.storage_path);
+        }
+      } catch (b2Err: any) {
+        console.warn(`Aviso: No se pudo eliminar de B2 (${asset.storage_path}):`, b2Err?.message);
+        errors.push(`B2 (${asset.storage_path}): ${b2Err?.message}`);
+      }
+    })
+  );
+
+  // 3. Eliminar todas las filas en PostgreSQL
+  const { error: dbError } = await supabase
+    .from('content_assets')
+    .delete()
+    .in('id', assetIds);
+
+  if (dbError) {
+    console.error('Error al eliminar registros masivos en content_assets:', dbError);
+    throw new Error(`Error al eliminar registros en base de datos: ${dbError.message}`);
+  }
+
+  return {
+    deletedCount: assets.length,
+    errors,
+  };
+}
+
+/**
  * Asocia lógicamente un asset existente a una pieza de contenido sin duplicar el archivo físico en Backblaze B2.
  */
 export async function linkExistingAssetToContent(

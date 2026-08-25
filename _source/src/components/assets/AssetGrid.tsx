@@ -11,6 +11,7 @@ interface AssetGridProps {
   onDelete: (asset: ContentAsset) => void;
   onUploadClick?: () => void;
   onSelect?: (asset: ContentAsset) => void;
+  onToggleSelect?: (asset: ContentAsset) => void;
   isSelectable?: boolean;
   selectedAssetIds?: string[];
   emptyTitle?: string;
@@ -25,6 +26,7 @@ export function AssetGrid({
   onDelete,
   onUploadClick,
   onSelect,
+  onToggleSelect,
   isSelectable = false,
   selectedAssetIds = [],
   emptyTitle = 'No se encontraron assets',
@@ -93,6 +95,7 @@ export function AssetGrid({
           onViewDetails={onViewDetails}
           onDelete={onDelete}
           onSelect={onSelect}
+          onToggleSelect={onToggleSelect}
           isSelectable={isSelectable}
           isSelected={selectedAssetIds.includes(asset.id)}
         />

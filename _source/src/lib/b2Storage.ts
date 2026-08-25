@@ -128,12 +128,31 @@ export async function getB2SignedUrl(
 }
 
 /**
- * Elimina un objeto de Backblaze B2.
+ * Elimina un objeto de Backblaze B2 de manera coordinada.
+ * Intenta vía Gateway Proxy en navegador para evitar restricciones de CORS y fallback a S3 directo.
  */
 export async function deleteFromB2(storagePath: string): Promise<void> {
   if (!storagePath) return;
 
   const cleanPath = storagePath.replace(/^\/+/, '');
+
+  // 1. Si estamos en navegador, intentar primero vía Proxy PHP Server-to-Server
+  if (typeof window !== 'undefined') {
+    try {
+      const resp = await fetch('/api/storage/b2/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ storagePath: cleanPath }),
+      });
+      if (resp.ok) {
+        return;
+      }
+    } catch (proxyErr) {
+      console.warn('Proxy PHP delete no disponible, intentando S3 directo:', proxyErr);
+    }
+  }
+
+  // 2. Fallback / Ejecución directa S3
   const command = new DeleteObjectCommand({
     Bucket: B2_CONFIG.bucketName,
     Key: cleanPath,

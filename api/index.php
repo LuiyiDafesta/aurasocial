@@ -332,6 +332,85 @@ if ($method === 'POST' && ($path === 'storage/upload' || $path === 'media/upload
     }
 }
 
+if ($method === 'POST' && ($path === 'storage/b2/delete' || $path === 'storage/delete')) {
+    $storagePath = $body['storagePath'] ?? ($body['storage_path'] ?? ($_POST['storagePath'] ?? ($_POST['storage_path'] ?? '')));
+    if (empty($storagePath)) {
+        http_response_code(400);
+        echo json_encode([
+            'success' => false,
+            'error' => 'Parámetro "storagePath" es requerido.'
+        ]);
+        exit;
+    }
+
+    try {
+        $cleanStoragePath = ltrim($storagePath, '/');
+        $authData = b2AuthorizeAccount($B2_KEY_ID, $B2_APPLICATION_KEY);
+        $apiUrl = $authData['apiUrl'];
+        $authToken = $authData['authorizationToken'];
+
+        // Listar archivos para encontrar el fileId exacto del storage_path
+        $ch = curl_init("{$apiUrl}/b2api/v2/b2_list_file_names");
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_HTTPHEADER => [
+                "Authorization: {$authToken}",
+                "Content-Type: application/json"
+            ],
+            CURLOPT_POSTFIELDS => json_encode([
+                'bucketId' => $B2_BUCKET_ID,
+                'startFileName' => $cleanStoragePath,
+                'maxFileCount' => 10
+            ]),
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 15
+        ]);
+        $listRes = curl_exec($ch);
+        curl_close($ch);
+        $listData = json_decode($listRes, true) ?: [];
+
+        $deletedCount = 0;
+        if (!empty($listData['files'])) {
+            foreach ($listData['files'] as $f) {
+                if ($f['fileName'] === $cleanStoragePath) {
+                    $delCh = curl_init("{$apiUrl}/b2api/v2/b2_delete_file_version");
+                    curl_setopt_array($delCh, [
+                        CURLOPT_POST => true,
+                        CURLOPT_HTTPHEADER => [
+                            "Authorization: {$authToken}",
+                            "Content-Type: application/json"
+                        ],
+                        CURLOPT_POSTFIELDS => json_encode([
+                            'fileId' => $f['fileId'],
+                            'fileName' => $f['fileName']
+                        ]),
+                        CURLOPT_RETURNTRANSFER => true,
+                        CURLOPT_TIMEOUT => 15
+                    ]);
+                    curl_exec($delCh);
+                    curl_close($delCh);
+                    $deletedCount++;
+                }
+            }
+        }
+
+        echo json_encode([
+            'success' => true,
+            'message' => 'Objeto eliminado correctamente de Backblaze B2.',
+            'storagePath' => $cleanStoragePath,
+            'deletedVersions' => $deletedCount
+        ]);
+        exit;
+    } catch (Exception $e) {
+        http_response_code(502);
+        echo json_encode([
+            'success' => false,
+            'error' => 'Error al eliminar de Backblaze B2: ' . $e->getMessage()
+        ]);
+        exit;
+    }
+}
+
 if ($method === 'GET' && $path === 'storage/signed-url') {
     $storagePath = $_GET['path'] ?? ($_GET['storagePath'] ?? '');
     if (empty($storagePath)) {

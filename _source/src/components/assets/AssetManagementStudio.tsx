@@ -4,7 +4,8 @@ import { Campaign } from '../../types/campaign';
 import { ContentAsset, AssetType, AssetSortOption, AssetScope } from '../../types/contentAsset';
 import { 
   searchAssets, 
-  deleteAsset 
+  deleteAsset,
+  deleteAssetsBulk
 } from '../../services/contentAssetService';
 import { AssetGrid } from './AssetGrid';
 import { AssetFilters } from './AssetFilters';
@@ -19,7 +20,10 @@ import {
   Plus, 
   Sparkles, 
   Target, 
-  RefreshCw 
+  RefreshCw,
+  Trash2,
+  CheckSquare,
+  Square
 } from 'lucide-react';
 
 interface AssetManagementStudioProps {
@@ -51,6 +55,11 @@ export function AssetManagementStudio({
   const [selectedType, setSelectedType] = useState<AssetType | 'all'>('all');
   const [sortBy, setSortBy] = useState<AssetSortOption>('newest');
   const [page, setPage] = useState<number>(1);
+
+  // Selección Masiva (Bulk Selection)
+  const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([]);
+  const [isBulkConfirmOpen, setIsBulkConfirmOpen] = useState<boolean>(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState<boolean>(false);
 
   // Modales
   const [isUploadModalOpen, setIsUploadModalOpen] = useState<boolean>(false);
@@ -99,17 +108,41 @@ export function AssetManagementStudio({
   // Resetear estados y recargar cuando cambia la marca o campaña
   useEffect(() => {
     setPage(1);
+    setSelectedAssetIds([]);
     loadAssets();
   }, [brand.id, campaign?.id, activeStudioTab, loadAssets]);
 
+  // Manejador de selección individual / toggle
+  const handleToggleSelect = (asset: ContentAsset) => {
+    setSelectedAssetIds((prev) =>
+      prev.includes(asset.id)
+        ? prev.filter((id) => id !== asset.id)
+        : [...prev, asset.id]
+    );
+  };
+
+  // Manejador de Seleccionar Todos / Deseleccionar Todos en la página actual
+  const isAllCurrentPageSelected = assets.length > 0 && assets.every((a) => selectedAssetIds.includes(a.id));
+
+  const handleToggleSelectAll = () => {
+    const currentPageIds = assets.map((a) => a.id);
+    if (isAllCurrentPageSelected) {
+      setSelectedAssetIds((prev) => prev.filter((id) => !currentPageIds.includes(id)));
+    } else {
+      setSelectedAssetIds((prev) => Array.from(new Set([...prev, ...currentPageIds])));
+    }
+  };
+
+  // Eliminación individual
   const handleDeleteConfirm = async () => {
     if (!assetToDelete || isDeleting) return;
 
     try {
       setIsDeleting(true);
       await deleteAsset(assetToDelete.id);
-      toast(`Asset "${assetToDelete.name}" eliminado correctamente`, { type: 'success' });
+      toast(`Asset "${assetToDelete.name}" eliminado correctamente de Backblaze B2 y base de datos`, { type: 'success' });
       setAssetToDelete(null);
+      setSelectedAssetIds((prev) => prev.filter((id) => id !== assetToDelete.id));
       loadAssets();
       onAssetsChanged?.();
     } catch (err: any) {
@@ -117,6 +150,28 @@ export function AssetManagementStudio({
       toast('Error al eliminar asset', { type: 'error', description: err.message });
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  // Eliminación masiva en cascada
+  const handleBulkDeleteConfirm = async () => {
+    if (selectedAssetIds.length === 0 || isBulkDeleting) return;
+
+    try {
+      setIsBulkDeleting(true);
+      const res = await deleteAssetsBulk(selectedAssetIds);
+      toast(`Se eliminaron ${res.deletedCount} assets en cascada de Backblaze B2 y base de datos`, {
+        type: 'success',
+      });
+      setSelectedAssetIds([]);
+      setIsBulkConfirmOpen(false);
+      loadAssets();
+      onAssetsChanged?.();
+    } catch (err: any) {
+      console.error('Error en eliminación masiva:', err);
+      toast('Error al eliminar assets en lote', { type: 'error', description: err.message });
+    } finally {
+      setIsBulkDeleting(false);
     }
   };
 
@@ -167,7 +222,19 @@ export function AssetManagementStudio({
           )}
         </div>
 
-        <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+        <div className="flex items-center gap-2 w-full sm:w-auto justify-end flex-wrap">
+          {assets.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleToggleSelectAll}
+              leftIcon={isAllCurrentPageSelected ? <CheckSquare className="w-3.5 h-3.5 text-aura-400" /> : <Square className="w-3.5 h-3.5" />}
+              className="text-xs h-9 bg-dark-900 border-dark-700 hover:bg-dark-800"
+            >
+              {isAllCurrentPageSelected ? 'Deseleccionar Página' : 'Seleccionar Todos'}
+            </Button>
+          )}
+
           <Button
             variant="outline"
             size="sm"
@@ -190,6 +257,46 @@ export function AssetManagementStudio({
         </div>
       </div>
 
+      {/* Bulk Action Floating Toolbar */}
+      {selectedAssetIds.length > 0 && (
+        <div className="bg-dark-900/95 border border-aura-500/40 rounded-2xl p-4 shadow-2xl flex items-center justify-between gap-4 flex-wrap animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-xl bg-aura-500/15 border border-aura-500/30 flex items-center justify-center text-aura-400 font-bold text-xs">
+              {selectedAssetIds.length}
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-white">
+                {selectedAssetIds.length} {selectedAssetIds.length === 1 ? 'asset seleccionado' : 'assets seleccionados'}
+              </h4>
+              <p className="text-xs text-slate-400">
+                Podés eliminarlos en cascada de Backblaze B2 y de la base de datos simultáneamente.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSelectedAssetIds([])}
+              className="text-xs text-slate-400 hover:text-white"
+            >
+              Cancelar selección
+            </Button>
+
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={() => setIsBulkConfirmOpen(true)}
+              leftIcon={<Trash2 className="w-3.5 h-3.5" />}
+              className="text-xs bg-rose-600 hover:bg-rose-500 text-white font-semibold shadow-lg shadow-rose-950/30"
+            >
+              Eliminar seleccionados ({selectedAssetIds.length})
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Filters Bar */}
       <AssetFilters
         searchTerm={searchTerm}
@@ -204,6 +311,8 @@ export function AssetManagementStudio({
       <AssetGrid
         assets={assets}
         isLoading={isLoading}
+        selectedAssetIds={selectedAssetIds}
+        onToggleSelect={handleToggleSelect}
         onPreview={(a) => setPreviewAsset(a)}
         onViewDetails={(a) => setDetailsAsset(a)}
         onDelete={(a) => setAssetToDelete(a)}
@@ -258,19 +367,31 @@ export function AssetManagementStudio({
         }}
       />
 
-      {/* Confirm Delete Dialog */}
+      {/* Individual Delete Confirm Dialog */}
       <ConfirmDialog
         isOpen={!!assetToDelete}
         onClose={() => setAssetToDelete(null)}
         onConfirm={handleDeleteConfirm}
-        title="¿Eliminar Asset Multimedia?"
-        message={`Se eliminará permanentemente el archivo "${assetToDelete?.name}" de Supabase Storage y de la base de datos. Esta acción no se puede deshacer.`}
-        confirmText="Eliminar Asset"
+        title={`¿Eliminar asset "${assetToDelete?.name}"?`}
+        message="Esta acción eliminará el archivo físico de Backblaze B2 y de la base de datos de manera permanente. No se puede deshacer."
+        confirmText={isDeleting ? 'Eliminando...' : 'Eliminar Asset'}
         cancelText="Cancelar"
         type="danger"
         isLoading={isDeleting}
       />
 
+      {/* Bulk Delete Confirm Dialog */}
+      <ConfirmDialog
+        isOpen={isBulkConfirmOpen}
+        onClose={() => setIsBulkConfirmOpen(false)}
+        onConfirm={handleBulkDeleteConfirm}
+        title={`¿Eliminar ${selectedAssetIds.length} assets en cascada?`}
+        message={`Esta acción eliminará permanentemente los ${selectedAssetIds.length} archivos físicos de Backblaze B2 Storage y sus registros de la base de datos. Esta operación no se puede deshacer.`}
+        confirmText={isBulkDeleting ? 'Eliminando en lote...' : `Eliminar ${selectedAssetIds.length} Assets`}
+        cancelText="Cancelar"
+        type="danger"
+        isLoading={isBulkDeleting}
+      />
     </div>
   );
 }
