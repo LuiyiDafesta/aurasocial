@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { PublicationPackage, PlatformAdaptation } from '../../types/platformAdaptation';
 import { 
   Heart, 
@@ -14,9 +14,72 @@ import {
   Film,
   Sparkles,
   MoveVertical,
-  Activity
+  Activity,
+  Scissors
 } from 'lucide-react';
 import { getB2CdnUrl } from '../../lib/b2Storage';
+
+interface TrimmedVideoPlayerProps {
+  mediaUrl: string;
+  startSeconds: number;
+  endSeconds: number;
+  className?: string;
+}
+
+function TrimmedVideoPlayer({
+  mediaUrl,
+  startSeconds,
+  endSeconds,
+  className = 'w-full h-full object-cover',
+}: TrimmedVideoPlayerProps) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  // Al cargar metadata del video, posicionar en startSeconds y reproducir
+  const handleLoadedMetadata = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (startSeconds > 0) {
+      video.currentTime = startSeconds;
+    }
+    video.play().catch(() => {});
+  };
+
+  // Monitorear timeupdate para mantener la reproducción estrictamente dentro del rango [startSeconds, endSeconds]
+  const handleTimeUpdate = () => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    // Si llegó o superó el final del fragmento, o está antes del inicio
+    if (video.currentTime >= endSeconds - 0.05 || video.currentTime < startSeconds - 0.2) {
+      video.currentTime = startSeconds;
+      video.play().catch(() => {});
+    }
+  };
+
+  // Reaccionar instantáneamente cuando startSeconds o endSeconds cambien en vivo desde el panel
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    if (video.currentTime < startSeconds || video.currentTime >= endSeconds) {
+      video.currentTime = startSeconds;
+      video.play().catch(() => {});
+    }
+  }, [startSeconds, endSeconds, mediaUrl]);
+
+  return (
+    <video
+      ref={videoRef}
+      src={mediaUrl}
+      onLoadedMetadata={handleLoadedMetadata}
+      onTimeUpdate={handleTimeUpdate}
+      autoPlay
+      muted
+      playsInline
+      className={className}
+    />
+  );
+}
 
 interface UnifiedSocialPreviewProps {
   publicationPackage: PublicationPackage;
@@ -97,6 +160,18 @@ export function UnifiedSocialPreview({
     (mediaUrl && (mediaUrl.includes('.mp4') || mediaUrl.includes('.mov') || mediaUrl.includes('.webm') || mediaUrl.includes('video')))
   );
 
+  // 3b. Calcular inicio y fin del fragmento para live preview
+  const startSec = typeof currentScene?.source_start_seconds === 'number' && currentScene.source_start_seconds >= 0
+    ? currentScene.source_start_seconds
+    : 0;
+
+  const endSec = typeof currentScene?.source_end_seconds === 'number' && currentScene.source_end_seconds > startSec
+    ? currentScene.source_end_seconds
+    : (startSec + (currentScene?.duration_seconds || 5));
+
+  const isTrimmed = startSec > 0 || (typeof currentScene?.asset_duration_seconds === 'number' && endSec < currentScene.asset_duration_seconds - 0.5);
+  const totalDuration = scenes.reduce((acc, s) => acc + (s.duration_seconds || 5), 0);
+
   const currentOverlay = (pkg.text_overlays || []).find((t) => t.scene_number === currentSceneNumber) ||
     (currentScene?.on_screen_text ? { text: currentScene.on_screen_text, safe_area_valid: true } : (pkg.text_overlays || [])[0]);
 
@@ -169,13 +244,10 @@ export function UnifiedSocialPreview({
             {/* Background Media: Video or Image */}
             {isVideo ? (
               <div className="absolute inset-0 w-full h-full bg-black overflow-hidden flex items-center justify-center">
-                <video
-                  key={mediaUrl}
-                  src={mediaUrl}
-                  autoPlay
-                  loop
-                  muted
-                  playsInline
+                <TrimmedVideoPlayer
+                  mediaUrl={mediaUrl}
+                  startSeconds={startSec}
+                  endSeconds={endSec}
                   className="w-full h-full object-cover"
                 />
               </div>
@@ -213,8 +285,14 @@ export function UnifiedSocialPreview({
                   {platform === 'tiktok' ? 'Siguiendo | Para ti' : 'Reels'}
                 </span>
                 {currentScene && (
-                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-full bg-white/20 backdrop-blur-md text-white border border-white/20">
-                    E{currentScene.scene_number} ({currentScene.duration_seconds || 5}s)
+                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-full bg-white/20 backdrop-blur-md text-white border border-white/20 flex items-center gap-1">
+                    <span>E{currentScene.scene_number} ({currentScene.duration_seconds || 5}s)</span>
+                    {isTrimmed && (
+                      <span className="text-[8px] text-amber-300 font-bold bg-black/40 px-1 rounded flex items-center gap-0.5">
+                        <Scissors className="w-2.5 h-2.5" />
+                        {startSec}s → {endSec}s
+                      </span>
+                    )}
                   </span>
                 )}
               </div>
@@ -334,13 +412,10 @@ export function UnifiedSocialPreview({
             {/* Media Image / Video / Render */}
             <div className="relative aspect-square bg-black flex items-center justify-center overflow-hidden">
               {isVideo ? (
-                <video
-                  key={mediaUrl}
-                  src={mediaUrl}
-                  autoPlay
-                  loop
-                  muted
-                  playsInline
+                <TrimmedVideoPlayer
+                  mediaUrl={mediaUrl}
+                  startSeconds={startSec}
+                  endSeconds={endSec}
                   className="w-full h-full object-cover"
                 />
               ) : (
@@ -382,7 +457,7 @@ export function UnifiedSocialPreview({
           {isVideo ? <Film className="w-3.5 h-3.5 text-emerald-400" /> : <Sparkles className="w-3.5 h-3.5 text-aura-400" />}
           <span className="text-slate-300 font-semibold">{format.toUpperCase()}</span>
           <span className="text-slate-500">•</span>
-          <strong className="text-slate-300 font-mono">{pkg.media?.duration_seconds || 15}s</strong>
+          <strong className="text-slate-300 font-mono">Total: {totalDuration}s</strong>
         </span>
 
         {/* Dynamic Cloudflare CDN Status Badge */}
