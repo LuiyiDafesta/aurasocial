@@ -83,12 +83,13 @@ export async function uploadToB2(
   storagePath: string,
   contentType: string
 ): Promise<{ storagePath: string; bucket: string; publicUrl?: string; fileId?: string }> {
-  const cleanPath = storagePath.replace(/^\/+/, '');
+  // Asegurar path sin slashes iniciales ni espacios que rompen la firma S3 en Backblaze B2
+  const cleanPath = storagePath.replace(/^\/+/, '').replace(/\s+/g, '_');
 
   // 1. Si estamos en el navegador y el dato es Blob o File, utilizar el proxy PHP Server-to-Server
   if (typeof window !== 'undefined' && typeof Blob !== 'undefined' && fileData instanceof Blob) {
     try {
-      return await uploadToB2ViaProxy(fileData, storagePath, contentType);
+      return await uploadToB2ViaProxy(fileData, cleanPath, contentType);
     } catch (proxyError: any) {
       console.warn('Proxy PHP falló o no disponible, intentando subida directa S3:', proxyError?.message);
     }

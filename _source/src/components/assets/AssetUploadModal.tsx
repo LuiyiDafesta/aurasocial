@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { AssetScope, AssetType } from '../../types/contentAsset';
 import { uploadAsset, ALLOWED_MIME_TYPES, MAX_FILE_SIZE_BYTES } from '../../services/contentAssetService';
+import { extractVideoMetadata } from '../../lib/mediaOptimizer';
 import { Button } from '../common/Button';
 import { useToast } from '../../hooks/useToast';
 import { 
@@ -9,7 +10,8 @@ import {
   FileText, 
   Target, 
   Sparkles, 
-  Layers 
+  Layers,
+  Film
 } from 'lucide-react';
 
 interface AssetUploadModalProps {
@@ -45,13 +47,14 @@ export function AssetUploadModal({
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [isDragOver, setIsDragOver] = useState<boolean>(false);
+  const [mediaDetails, setMediaDetails] = useState<{ duration?: number; width?: number; height?: number } | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
   if (!isOpen) return null;
 
-  const handleFileSelect = (file: File) => {
+  const handleFileSelect = async (file: File) => {
     if (!file) return;
 
     if (file.size > MAX_FILE_SIZE_BYTES) {
@@ -62,7 +65,7 @@ export function AssetUploadModal({
     }
 
     if (!ALLOWED_MIME_TYPES.includes(file.type)) {
-      toast(`Formato "${file.type || 'desconocido'}" no permitido. Formatos válidos: PNG, JPG, WebP, GIF, MP4, MOV, MP3, WAV, PDF.`, {
+      toast(`Formato "${file.type || 'desconocido'}" no permitido. Formatos válidos: PNG, JPG, WebP, GIF, MP4, MOV, WEBM, MP3, WAV, PDF.`, {
         type: 'error',
       });
       return;
@@ -70,12 +73,19 @@ export function AssetUploadModal({
 
     setSelectedFile(file);
     setAssetName(file.name.replace(/\.[^/.]+$/, ''));
+    setMediaDetails(null);
 
     // Auto-detect assetType based on MIME
     if (file.type.startsWith('image/')) {
       setAssetType('image');
     } else if (file.type.startsWith('video/')) {
       setAssetType('video');
+      try {
+        const meta = await extractVideoMetadata(file);
+        setMediaDetails(meta);
+      } catch {
+        // ignore
+      }
     } else if (file.type.startsWith('audio/')) {
       setAssetType('audio');
     } else if (file.type === 'application/pdf') {
@@ -105,7 +115,7 @@ export function AssetUploadModal({
 
     try {
       setIsSubmitting(true);
-      setUploadProgress(20);
+      setUploadProgress(25);
 
       await uploadAsset({
         file: selectedFile,
@@ -119,7 +129,7 @@ export function AssetUploadModal({
       });
 
       setUploadProgress(100);
-      toast('Asset multimedia subido y registrado con éxito', { type: 'success' });
+      toast('Asset multimedia subido y optimizado con éxito', { type: 'success' });
       onAssetUploaded();
       handleClose();
     } catch (err: any) {
@@ -135,6 +145,7 @@ export function AssetUploadModal({
     setSelectedFile(null);
     setAssetName('');
     setAssetType('image');
+    setMediaDetails(null);
     setIsSubmitting(false);
     setUploadProgress(0);
     onClose();
@@ -263,6 +274,28 @@ export function AssetUploadModal({
                 </button>
               </div>
 
+              {/* Media Optimization & Metadata Pill */}
+              {mediaDetails && typeof mediaDetails.duration === 'number' && mediaDetails.duration > 0 && (
+                <div className="flex items-center gap-2 p-2 bg-dark-900 rounded-xl border border-dark-800 text-[11px] text-slate-300">
+                  <Film className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span>
+                    Duración detectada: <strong className="text-white font-mono">{mediaDetails.duration}s</strong>
+                    {mediaDetails.width && mediaDetails.height && (
+                      <span className="text-slate-400 font-mono"> • {mediaDetails.width}x{mediaDetails.height}px</span>
+                    )}
+                  </span>
+                </div>
+              )}
+
+              {selectedFile.type.startsWith('image/') && (
+                <div className="flex items-center gap-2 p-2 bg-dark-900 rounded-xl border border-dark-800 text-[11px] text-slate-300">
+                  <Sparkles className="w-3.5 h-3.5 text-aura-400 shrink-0" />
+                  <span className="text-slate-300">
+                    Compresión WebP inteligente activa (optimización instantánea)
+                  </span>
+                </div>
+              )}
+
               {/* Upload Progress Bar */}
               {isSubmitting && (
                 <div className="space-y-1.5 pt-1">
@@ -273,7 +306,7 @@ export function AssetUploadModal({
                     ></div>
                   </div>
                   <p className="text-[10px] text-aura-300 font-mono text-right">
-                    Subiendo archivo...
+                    Subiendo y optimizando asset...
                   </p>
                 </div>
               )}
