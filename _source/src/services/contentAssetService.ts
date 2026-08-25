@@ -122,6 +122,7 @@ export async function uploadAsset({
   assetType,
   name,
   metadata = {},
+  onProgress,
 }: UploadAssetParams): Promise<ContentAsset> {
   if (!file) throw new Error('Archivo no proporcionado');
   if (!workspaceId) throw new Error('workspaceId es requerido');
@@ -134,7 +135,7 @@ export async function uploadAsset({
 
   // 2. Validar MIME type
   if (!ALLOWED_MIME_TYPES.includes(file.type)) {
-    throw new Error(`Tipo de archivo no permitido (${file.type || 'desconocido'}). Formatos permitidos: PNG, JPG, WebP, GIF, MP4, MOV, MP3, WAV, PDF.`);
+    throw new Error(`Tipo de archivo no permitido (${file.type || 'desconocido'}). Formatos permitidos: PNG, JPG, WebP, GIF, MP4, MOV, WEBM, MP3, WAV, PDF.`);
   }
 
   // 3. Validar consistencia de scope
@@ -190,9 +191,9 @@ export async function uploadAsset({
     contentItemId
   );
 
-  // 5. Subir a Backblaze B2
+  // 5. Subir a Backblaze B2 con soporte Multipart y reporte de progreso
   try {
-    await uploadToB2(finalFile, storagePath, finalFile.type);
+    await uploadToB2(finalFile, storagePath, finalFile.type, onProgress);
   } catch (storageError: any) {
     console.error('Error al subir archivo a Backblaze B2:', storageError);
     throw new Error(`Error de Almacenamiento Backblaze B2: ${storageError?.message || 'Fallo de subida'}`);

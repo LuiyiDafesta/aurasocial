@@ -1,4 +1,5 @@
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { Upload } from '@aws-sdk/lib-storage';
 
 export const B2_CONFIG = {
   endpoint: import.meta.env.VITE_B2_ENDPOINT || 'https://s3.us-west-004.backblazeb2.com',
@@ -75,40 +76,65 @@ export async function uploadToB2ViaProxy(
 }
 
 /**
- * Sube un archivo o blob directamente a Backblaze B2.
- * En navegador intenta primero el Proxy PHP para evitar CORS y fallbacks a S3 directo.
+ * Sube un archivo o blob a Backblaze B2 mediante subida segmentada multipart (5MB por bloque).
+ * Procesa archivos de gran tamaño (287MB+) de forma resiliente con reintentos automáticos y reporte de progreso.
  */
 export async function uploadToB2(
   fileData: Blob | Uint8Array | ArrayBuffer | string,
   storagePath: string,
-  contentType: string
+  contentType: string,
+  onProgress?: (percentage: number) => void
 ): Promise<{ storagePath: string; bucket: string; publicUrl?: string; fileId?: string }> {
   // Asegurar path sin slashes iniciales ni espacios que rompen la firma S3 en Backblaze B2
   const cleanPath = storagePath.replace(/^\/+/, '').replace(/\s+/g, '_');
 
-  // 1. Si estamos en el navegador y el dato es Blob o File, utilizar el proxy PHP Server-to-Server
-  if (typeof window !== 'undefined' && typeof Blob !== 'undefined' && fileData instanceof Blob) {
+  // 1. Si estamos en el navegador y el dato es Blob o File pequeño (< 5MB), intentar el proxy PHP Server-to-Server
+  if (
+    typeof window !== 'undefined' && 
+    typeof Blob !== 'undefined' && 
+    fileData instanceof Blob && 
+    fileData.size < 5 * 1024 * 1024
+  ) {
     try {
       return await uploadToB2ViaProxy(fileData, cleanPath, contentType);
     } catch (proxyError: any) {
-      console.warn('Proxy PHP falló o no disponible, intentando subida directa S3:', proxyError?.message);
+      console.warn('Proxy PHP falló o no disponible, usando Multipart Upload directo:', proxyError?.message);
     }
   }
 
-  // 2. Fallback directo S3 Client (útil para Node.js, CLI scripts o entornos sin proxy)
+  // 2. Subida segmentada directa mediante S3 Multipart Upload (resiliente para archivos de 200MB+)
   let body: any = fileData;
   if (typeof Blob !== 'undefined' && fileData instanceof Blob) {
-    body = new Uint8Array(await fileData.arrayBuffer());
+    body = fileData;
   }
 
-  const command = new PutObjectCommand({
-    Bucket: B2_CONFIG.bucketName,
-    Key: cleanPath,
-    Body: body,
-    ContentType: contentType,
+  const parallelUploads3 = new Upload({
+    client: b2Client,
+    params: {
+      Bucket: B2_CONFIG.bucketName,
+      Key: cleanPath,
+      Body: body,
+      ContentType: contentType,
+    },
+    queueSize: 4, // 4 conexiones paralelas
+    partSize: 5 * 1024 * 1024, // 5 MB por segmento
+    leavePartsOnError: false,
   });
 
-  await b2Client.send(command);
+  if (onProgress) {
+    parallelUploads3.on('httpUploadProgress', (progress) => {
+      if (progress.total && progress.total > 0) {
+        const percentage = Math.min(99, Math.round((progress.loaded! / progress.total) * 100));
+        onProgress(percentage);
+      }
+    });
+  }
+
+  await parallelUploads3.done();
+
+  if (onProgress) {
+    onProgress(100);
+  }
 
   return {
     storagePath: cleanPath,

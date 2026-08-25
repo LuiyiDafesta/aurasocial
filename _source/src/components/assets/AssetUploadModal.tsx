@@ -115,7 +115,7 @@ export function AssetUploadModal({
 
     try {
       setIsSubmitting(true);
-      setUploadProgress(25);
+      setUploadProgress(5);
 
       await uploadAsset({
         file: selectedFile,
@@ -126,6 +126,7 @@ export function AssetUploadModal({
         contentItemId: scope === 'content' ? contentItemId : null,
         assetType,
         name: assetName.trim() || selectedFile.name,
+        onProgress: (pct) => setUploadProgress(Math.max(5, pct)),
       });
 
       setUploadProgress(100);
