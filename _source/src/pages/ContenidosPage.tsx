@@ -6,6 +6,8 @@ import { AssignToCampaignModal } from '../components/campaigns/AssignToCampaignM
 import { ConfirmDialog } from '../components/common/ConfirmDialog';
 import { useContentItems } from '../hooks/useContentItems';
 import { ContentItem, ContentStatus, SocialPlatform } from '../types/contentItem';
+import { ContentVersion } from '../types/contentVersion';
+import { getContentVersions } from '../services/contentVersionService';
 import { deleteContentItem, deleteContentItemsBulk } from '../services/contentItemsService';
 import { RefreshCw, Sparkles, Layers, Trash2, CheckSquare, Square } from 'lucide-react';
 import { Button } from '../components/common/Button';
@@ -19,6 +21,7 @@ interface ContenidosPageProps {
 
 export function ContenidosPage({ workspaceId, brandId, onContentMutated }: ContenidosPageProps) {
   const [selectedContentItem, setSelectedContentItem] = useState<ContentItem | null>(null);
+  const [selectedContentVersion, setSelectedContentVersion] = useState<ContentVersion | null>(null);
   const [contentToAssignCampaign, setContentToAssignCampaign] = useState<ContentItem | null>(null);
   const [statusFilter, setStatusFilter] = useState<ContentStatus | 'all'>('all');
   const [platformFilter, setPlatformFilter] = useState<SocialPlatform | 'all'>('all');
@@ -52,8 +55,14 @@ export function ContenidosPage({ workspaceId, brandId, onContentMutated }: Conte
     setSearchQuery('');
   };
 
-  const handleReview = (item: ContentItem) => {
+  const handleReview = async (item: ContentItem) => {
     setSelectedContentItem(item);
+    try {
+      const versions = await getContentVersions(item.id);
+      setSelectedContentVersion(versions && versions.length > 0 ? versions[0] : null);
+    } catch {
+      setSelectedContentVersion(null);
+    }
   };
 
   const handleToggleSelectItem = (item: ContentItem) => {
@@ -114,7 +123,11 @@ export function ContenidosPage({ workspaceId, brandId, onContentMutated }: Conte
     return (
       <ContentWorkspace
         item={selectedContentItem}
-        onBack={() => setSelectedContentItem(null)}
+        currentVersion={selectedContentVersion}
+        onBack={() => {
+          setSelectedContentItem(null);
+          setSelectedContentVersion(null);
+        }}
         onContentUpdated={() => {
           refreshItems();
           onContentMutated?.();

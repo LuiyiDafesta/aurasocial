@@ -25,6 +25,7 @@ export type AssetResolutionSource =
   | 'brand_asset'
   | 'stock'
   | 'placeholder'
+  | 'ai_generated'
   | 'ai_mock'
   | 'needs_asset';
 
@@ -75,12 +76,14 @@ export interface PlatformConstraints {
 }
 
 export interface SceneMediaPlan {
+  scene_id?: string;
   scene_number: number;
   asset_type: 'video' | 'image' | 'audio';
   description: string;
   visual_direction?: string;
   camera_direction?: string;
   duration_seconds: number;
+  asset_duration_seconds?: number | null;
   on_screen_text?: string;
   voiceover?: string;
   transition?: string;

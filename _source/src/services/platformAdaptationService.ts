@@ -422,19 +422,19 @@ export async function savePlatformAdaptation(
     title: adaptation.title || null,
     hook: adaptation.hook || null,
     dimensions: adaptation.dimensions || { width: 1080, height: 1920, aspect_ratio: '9:16' },
-    target_duration_seconds: adaptation.target_duration_seconds,
-    caption: adaptation.caption,
-    hashtags: adaptation.hashtags || [],
-    cta: adaptation.cta,
+    target_duration_seconds: typeof adaptation.target_duration_seconds === 'number' && !isNaN(adaptation.target_duration_seconds) ? adaptation.target_duration_seconds : null,
+    caption: adaptation.caption || '',
+    hashtags: Array.isArray(adaptation.hashtags) ? adaptation.hashtags : [],
+    cta: adaptation.cta || '',
     safe_area: adaptation.safe_area || {},
     platform_rules: adaptation.platform_rules || {},
     thumbnail_strategy: adaptation.thumbnail_strategy || {},
-    scene_mappings: adaptation.scene_mappings || [],
+    scene_mappings: Array.isArray(adaptation.scene_mappings) ? adaptation.scene_mappings : [],
     render_status: adaptation.render_status || 'not_started',
     render_output: adaptation.render_output || {},
     validation_status: adaptation.validation_status || 'pending',
-    validation_errors: adaptation.validation_errors || [],
-    validation_warnings: adaptation.validation_warnings || [],
+    validation_errors: Array.isArray(adaptation.validation_errors) ? adaptation.validation_errors : [],
+    validation_warnings: Array.isArray(adaptation.validation_warnings) ? adaptation.validation_warnings : [],
     readiness_status: adaptation.readiness_status || 'draft',
     approved_by: adaptation.approved_by || null,
     approved_at: adaptation.approved_at || null,
@@ -460,7 +460,7 @@ export async function savePlatformAdaptation(
 
   if (res.error) {
     console.error('Error al guardar platform_adaptation:', res.error);
-    throw new Error(`Error al guardar adaptación: ${res.error.message}`);
+    throw new Error(`Error al guardar adaptación en base de datos: ${res.error.message}`);
   }
 
   return res.data as PlatformAdaptation;
@@ -656,11 +656,22 @@ export async function invalidatePlatformApproval(
 }
 
 /**
+ * Genera un ID de escena único y determinista si no existe.
+ */
+function ensureSceneId(scene: Partial<SceneMediaPlan>, index: number): string {
+  if (scene.scene_id && typeof scene.scene_id === 'string' && scene.scene_id.trim()) {
+    return scene.scene_id;
+  }
+  return `sc_${index + 1}_${Math.random().toString(36).substring(2, 9)}`;
+}
+
+/**
  * Reemplaza o asigna un asset específico a una escena en una adaptación dada.
+ * Conserva la identidad estable (scene_id) y distingue asset_duration_seconds de duration_seconds.
  */
 export async function updateAdaptationSceneAsset(
   adaptation: PlatformAdaptation,
-  sceneNumber: number,
+  sceneNumberOrId: number | string,
   asset: ContentAsset,
   brandName: string
 ): Promise<PlatformAdaptation> {
@@ -673,24 +684,46 @@ export async function updateAdaptationSceneAsset(
     }
   }
 
-  const updatedScenes = adaptation.scene_mappings.map((s) => {
-    if (s.scene_number === sceneNumber) {
+  const rawAssetDuration = typeof asset.duration_seconds === 'number' && asset.duration_seconds > 0
+    ? asset.duration_seconds
+    : null;
+
+  const updatedScenes = adaptation.scene_mappings.map((s, idx) => {
+    const isMatch = typeof sceneNumberOrId === 'string'
+      ? s.scene_id === sceneNumberOrId
+      : s.scene_number === sceneNumberOrId;
+
+    if (isMatch) {
+      let newSceneDuration = s.duration_seconds;
+      if (rawAssetDuration !== null) {
+        newSceneDuration = Math.round(rawAssetDuration);
+      }
+
       return {
         ...s,
+        scene_id: ensureSceneId(s, idx),
+        asset_type: asset.asset_type === 'image' ? ('image' as const) : ('video' as const),
         source: 'real_asset' as const,
         asset_id: asset.id,
         asset_name: asset.name,
         storage_path: asset.storage_path,
         mime_type: asset.mime_type,
         asset_url: assetUrl,
+        asset_duration_seconds: rawAssetDuration,
+        duration_seconds: newSceneDuration,
         status: 'resolved' as const,
       };
     }
-    return s;
+    return {
+      ...s,
+      scene_id: ensureSceneId(s, idx),
+    };
   });
 
+  const totalDuration = updatedScenes.reduce((acc, s) => acc + (s.duration_seconds || 4), 0);
+
   const { renderOutput, publicationPackage, validation } = await composeAndRenderAdaptation({
-    adaptation: { ...adaptation, scene_mappings: updatedScenes },
+    adaptation: { ...adaptation, scene_mappings: updatedScenes, target_duration_seconds: totalDuration },
     scenes: updatedScenes,
     brandName,
     campaignId: adaptation.campaign_id,
@@ -699,7 +732,262 @@ export async function updateAdaptationSceneAsset(
   return savePlatformAdaptation({
     ...adaptation,
     scene_mappings: updatedScenes,
+    target_duration_seconds: totalDuration,
     render_status: 'rendered',
+    render_output: renderOutput,
+    validation_status: validation.isValid ? 'valid' : 'blocked',
+    validation_errors: validation.errors,
+    validation_warnings: validation.warnings,
+    readiness_status: publicationPackage.readiness_status,
+    publication_package: publicationPackage,
+  });
+}
+
+/**
+ * Desvincula el asset de una escena devolviéndola al estado 'needs_asset' sin perder textos ni directivas.
+ */
+export async function removeAdaptationSceneAsset(
+  adaptation: PlatformAdaptation,
+  sceneNumberOrId: number | string,
+  brandName: string
+): Promise<PlatformAdaptation> {
+  const updatedScenes = adaptation.scene_mappings.map((s, idx) => {
+    const isMatch = typeof sceneNumberOrId === 'string'
+      ? s.scene_id === sceneNumberOrId
+      : s.scene_number === sceneNumberOrId;
+
+    if (isMatch) {
+      return {
+        ...s,
+        scene_id: ensureSceneId(s, idx),
+        source: 'needs_asset' as const,
+        asset_id: null,
+        asset_name: null,
+        storage_path: null,
+        mime_type: null,
+        asset_url: null,
+        asset_duration_seconds: null,
+        status: 'needs_asset' as const,
+      };
+    }
+    return {
+      ...s,
+      scene_id: ensureSceneId(s, idx),
+    };
+  });
+
+  const totalDuration = updatedScenes.reduce((acc, s) => acc + (s.duration_seconds || 4), 0);
+
+  const { renderOutput, publicationPackage, validation } = await composeAndRenderAdaptation({
+    adaptation: { ...adaptation, scene_mappings: updatedScenes, target_duration_seconds: totalDuration },
+    scenes: updatedScenes,
+    brandName,
+    campaignId: adaptation.campaign_id,
+  });
+
+  return savePlatformAdaptation({
+    ...adaptation,
+    scene_mappings: updatedScenes,
+    target_duration_seconds: totalDuration,
+    render_status: 'rendered',
+    render_output: renderOutput,
+    validation_status: validation.isValid ? 'valid' : 'blocked',
+    validation_errors: validation.errors,
+    validation_warnings: validation.warnings,
+    readiness_status: publicationPackage.readiness_status,
+    publication_package: publicationPackage,
+  });
+}
+
+/**
+ * Reordena las escenas finales conservando el scene_id estable y re-indexando scene_number.
+ */
+export async function reorderAdaptationScenes(
+  adaptation: PlatformAdaptation,
+  newOrderedScenes: SceneMediaPlan[],
+  brandName: string
+): Promise<PlatformAdaptation> {
+  const reindexedScenes = newOrderedScenes.map((s, idx) => ({
+    ...s,
+    scene_id: ensureSceneId(s, idx),
+    scene_number: idx + 1,
+  }));
+
+  const totalDuration = reindexedScenes.reduce((acc, s) => acc + (s.duration_seconds || 4), 0);
+
+  const { renderOutput, publicationPackage, validation } = await composeAndRenderAdaptation({
+    adaptation: { ...adaptation, scene_mappings: reindexedScenes, target_duration_seconds: totalDuration },
+    scenes: reindexedScenes,
+    brandName,
+    campaignId: adaptation.campaign_id,
+  });
+
+  return savePlatformAdaptation({
+    ...adaptation,
+    scene_mappings: reindexedScenes,
+    target_duration_seconds: totalDuration,
+    render_output: renderOutput,
+    validation_status: validation.isValid ? 'valid' : 'blocked',
+    validation_errors: validation.errors,
+    validation_warnings: validation.warnings,
+    readiness_status: publicationPackage.readiness_status,
+    publication_package: publicationPackage,
+  });
+}
+
+/**
+ * Agrega una escena final adicional al timeline de la adaptación.
+ */
+export async function addAdaptationScene(
+  adaptation: PlatformAdaptation,
+  brandName: string
+): Promise<PlatformAdaptation> {
+  const currentScenes = Array.isArray(adaptation.scene_mappings) ? adaptation.scene_mappings : [];
+  const nextNum = currentScenes.length + 1;
+
+  const newScene: SceneMediaPlan = {
+    scene_id: `sc_${nextNum}_${Math.random().toString(36).substring(2, 9)}`,
+    scene_number: nextNum,
+    asset_type: 'video',
+    description: `Escena adicional #${nextNum}`,
+    visual_direction: 'Toma complementaria de producción',
+    duration_seconds: 5,
+    asset_duration_seconds: null,
+    on_screen_text: '',
+    transition: 'fade',
+    layout: 'full_screen',
+    text_position: 'middle',
+    text_alignment: 'center',
+    source: 'needs_asset',
+    asset_id: null,
+    asset_name: null,
+    storage_path: null,
+    mime_type: null,
+    asset_url: null,
+    safe_area_valid: true,
+    safe_area_warning: null,
+    status: 'needs_asset',
+  };
+
+  const updatedScenes = [...currentScenes, newScene].map((s, idx) => ({
+    ...s,
+    scene_id: ensureSceneId(s, idx),
+    scene_number: idx + 1,
+  }));
+
+  const totalDuration = updatedScenes.reduce((acc, s) => acc + (s.duration_seconds || 4), 0);
+
+  const { renderOutput, publicationPackage, validation } = await composeAndRenderAdaptation({
+    adaptation: { ...adaptation, scene_mappings: updatedScenes, target_duration_seconds: totalDuration },
+    scenes: updatedScenes,
+    brandName,
+    campaignId: adaptation.campaign_id,
+  });
+
+  return savePlatformAdaptation({
+    ...adaptation,
+    scene_mappings: updatedScenes,
+    target_duration_seconds: totalDuration,
+    render_output: renderOutput,
+    validation_status: validation.isValid ? 'valid' : 'blocked',
+    validation_errors: validation.errors,
+    validation_warnings: validation.warnings,
+    readiness_status: publicationPackage.readiness_status,
+    publication_package: publicationPackage,
+  });
+}
+
+/**
+ * Elimina una escena final del timeline (mínimo 1 escena requerida).
+ */
+export async function removeAdaptationScene(
+  adaptation: PlatformAdaptation,
+  sceneNumberOrId: number | string,
+  brandName: string
+): Promise<PlatformAdaptation> {
+  const currentScenes = Array.isArray(adaptation.scene_mappings) ? adaptation.scene_mappings : [];
+  if (currentScenes.length <= 1) {
+    throw new Error('La producción debe contener al menos 1 escena.');
+  }
+
+  const filteredScenes = currentScenes.filter((s) => {
+    return typeof sceneNumberOrId === 'string'
+      ? s.scene_id !== sceneNumberOrId
+      : s.scene_number !== sceneNumberOrId;
+  });
+
+  const reindexedScenes = filteredScenes.map((s, idx) => ({
+    ...s,
+    scene_id: ensureSceneId(s, idx),
+    scene_number: idx + 1,
+  }));
+
+  const totalDuration = reindexedScenes.reduce((acc, s) => acc + (s.duration_seconds || 4), 0);
+
+  const { renderOutput, publicationPackage, validation } = await composeAndRenderAdaptation({
+    adaptation: { ...adaptation, scene_mappings: reindexedScenes, target_duration_seconds: totalDuration },
+    scenes: reindexedScenes,
+    brandName,
+    campaignId: adaptation.campaign_id,
+  });
+
+  return savePlatformAdaptation({
+    ...adaptation,
+    scene_mappings: reindexedScenes,
+    target_duration_seconds: totalDuration,
+    render_output: renderOutput,
+    validation_status: validation.isValid ? 'valid' : 'blocked',
+    validation_errors: validation.errors,
+    validation_warnings: validation.warnings,
+    readiness_status: publicationPackage.readiness_status,
+    publication_package: publicationPackage,
+  });
+}
+
+/**
+ * Actualiza la duración de una escena individual validando contra la duración física del asset.
+ */
+export async function updateAdaptationSceneDuration(
+  adaptation: PlatformAdaptation,
+  sceneNumberOrId: number | string,
+  durationSeconds: number,
+  brandName: string
+): Promise<PlatformAdaptation> {
+  if (isNaN(durationSeconds) || durationSeconds <= 0) {
+    throw new Error('La duración de la escena debe ser mayor a 0 segundos.');
+  }
+
+  const updatedScenes = adaptation.scene_mappings.map((s, idx) => {
+    const isMatch = typeof sceneNumberOrId === 'string'
+      ? s.scene_id === sceneNumberOrId
+      : s.scene_number === sceneNumberOrId;
+
+    if (isMatch) {
+      return {
+        ...s,
+        scene_id: ensureSceneId(s, idx),
+        duration_seconds: durationSeconds,
+      };
+    }
+    return {
+      ...s,
+      scene_id: ensureSceneId(s, idx),
+    };
+  });
+
+  const totalDuration = updatedScenes.reduce((acc, s) => acc + (s.duration_seconds || 4), 0);
+
+  const { renderOutput, publicationPackage, validation } = await composeAndRenderAdaptation({
+    adaptation: { ...adaptation, scene_mappings: updatedScenes, target_duration_seconds: totalDuration },
+    scenes: updatedScenes,
+    brandName,
+    campaignId: adaptation.campaign_id,
+  });
+
+  return savePlatformAdaptation({
+    ...adaptation,
+    scene_mappings: updatedScenes,
+    target_duration_seconds: totalDuration,
     render_output: renderOutput,
     validation_status: validation.isValid ? 'valid' : 'blocked',
     validation_errors: validation.errors,
@@ -954,8 +1242,8 @@ export function buildRenderPackage(adaptation: PlatformAdaptation): RenderPackag
 }
 
 /**
- * Sincroniza y propaga la configuración de escenas (assets, overlays, posiciones) de una adaptación
- * hacia todas las demás plataformas del contenido (Instagram, TikTok, Facebook, LinkedIn, YouTube).
+ * Sincroniza selectivamente los recursos multimedia (assets) a las demás adaptaciones
+ * respetando las personalizaciones de layout, texto, duraciones y safe area propias de cada plataforma.
  */
 export async function syncScenesToAllAdaptations(
   contentItemId: string,
@@ -969,27 +1257,28 @@ export async function syncScenesToAllAdaptations(
   const updatedList: PlatformAdaptation[] = [];
 
   for (const adaptation of adaptations) {
-    const updatedScenes = (adaptation.scene_mappings || []).map((targetScene) => {
-      const source = sourceScenes.find((s) => s.scene_number === targetScene.scene_number);
-      if (!source) return targetScene;
+    const existingTargetScenes = Array.isArray(adaptation.scene_mappings) ? adaptation.scene_mappings : [];
+
+    const updatedScenes: SceneMediaPlan[] = sourceScenes.map((source, idx) => {
+      const matchingTarget = existingTargetScenes.find(
+        (t) => (t.scene_id && t.scene_id === source.scene_id) || t.scene_number === source.scene_number
+      );
 
       return {
-        ...targetScene,
-        source: source.source,
-        asset_id: source.asset_id,
-        asset_name: source.asset_name,
-        storage_path: source.storage_path,
-        mime_type: source.mime_type,
-        asset_url: source.asset_url,
-        status: source.status,
-        on_screen_text: source.on_screen_text !== undefined ? source.on_screen_text : targetScene.on_screen_text,
-        text_position: source.text_position || targetScene.text_position || 'middle',
-        text_alignment: source.text_alignment || targetScene.text_alignment || 'center',
+        ...source,
+        scene_id: source.scene_id || ensureSceneId(source, idx),
+        scene_number: idx + 1,
+        on_screen_text: matchingTarget?.on_screen_text !== undefined ? matchingTarget.on_screen_text : source.on_screen_text,
+        text_position: matchingTarget?.text_position || source.text_position || 'middle',
+        text_alignment: matchingTarget?.text_alignment || source.text_alignment || 'center',
+        fit_mode: adaptation.format === 'post' ? 'contain' : (matchingTarget?.fit_mode || source.fit_mode || 'cover'),
       };
     });
 
+    const totalDuration = updatedScenes.reduce((acc, s) => acc + (s.duration_seconds || 4), 0);
+
     const { renderOutput, publicationPackage, validation } = await composeAndRenderAdaptation({
-      adaptation: { ...adaptation, scene_mappings: updatedScenes },
+      adaptation: { ...adaptation, scene_mappings: updatedScenes, target_duration_seconds: totalDuration },
       scenes: updatedScenes,
       brandName,
       campaignId: adaptation.campaign_id,
@@ -998,6 +1287,7 @@ export async function syncScenesToAllAdaptations(
     const saved = await savePlatformAdaptation({
       ...adaptation,
       scene_mappings: updatedScenes,
+      target_duration_seconds: totalDuration,
       render_status: 'rendered',
       render_output: renderOutput,
       validation_status: validation.isValid ? 'valid' : 'blocked',

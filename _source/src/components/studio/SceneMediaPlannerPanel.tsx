@@ -18,7 +18,13 @@ import {
   AlignLeft,
   AlignCenter,
   AlignRight,
-  Share2
+  Share2,
+  Plus,
+  Trash2,
+  ChevronLeft,
+  ChevronRight,
+  XCircle,
+  Clock
 } from 'lucide-react';
 
 interface SceneMediaPlannerPanelProps {
@@ -26,6 +32,11 @@ interface SceneMediaPlannerPanelProps {
   activeSceneNumber?: number;
   onSelectActiveScene?: (sceneNumber: number) => void;
   onSelectSceneForAsset: (sceneNumber: number) => void;
+  onRemoveAssetFromScene?: (sceneNumber: number) => void;
+  onReorderScenes?: (newScenes: SceneMediaPlan[]) => void;
+  onAddScene?: () => void;
+  onRemoveScene?: (sceneNumber: number) => void;
+  onUpdateSceneDuration?: (sceneNumber: number, durationSeconds: number) => void;
   onUpdateSceneText: (sceneNumber: number, text: string) => void;
   onUpdateSceneTextPosition?: (
     sceneNumber: number, 
@@ -42,6 +53,11 @@ export function SceneMediaPlannerPanel({
   activeSceneNumber,
   onSelectActiveScene,
   onSelectSceneForAsset,
+  onRemoveAssetFromScene,
+  onReorderScenes,
+  onAddScene,
+  onRemoveScene,
+  onUpdateSceneDuration,
   onUpdateSceneText,
   onUpdateSceneTextPosition,
   onUsePlaceholder,
@@ -99,6 +115,23 @@ export function SceneMediaPlannerPanel({
   const currentPosition = currentScene?.text_position || 'middle';
   const currentAlignment = currentScene?.text_alignment || 'center';
 
+  const handleMoveScene = (direction: 'left' | 'right') => {
+    if (!onReorderScenes || scenes.length <= 1) return;
+    const targetIdx = direction === 'left' ? activeSceneIndex - 1 : activeSceneIndex + 1;
+    if (targetIdx < 0 || targetIdx >= scenes.length) return;
+
+    const newScenes = [...scenes];
+    const temp = newScenes[activeSceneIndex];
+    newScenes[activeSceneIndex] = newScenes[targetIdx];
+    newScenes[targetIdx] = temp;
+
+    setInternalSceneIndex(targetIdx);
+    onReorderScenes(newScenes);
+    if (onSelectActiveScene) {
+      onSelectActiveScene(targetIdx + 1);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full bg-dark-900/90 border border-dark-800 rounded-3xl p-5 shadow-xl space-y-4">
       {/* Header */}
@@ -119,14 +152,14 @@ export function SceneMediaPlannerPanel({
 
       {/* Scene Pills List */}
       <div className="flex items-center justify-between gap-2 overflow-x-auto pb-1 scrollbar-thin">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           {scenes.map((scene, idx) => {
             const isSelected = idx === activeSceneIndex;
             const isResolved = scene.status === 'resolved';
 
             return (
               <button
-                key={scene.scene_number}
+                key={scene.scene_id || scene.scene_number}
                 onClick={() => {
                   setInternalSceneIndex(idx);
                   if (onSelectActiveScene) {
@@ -144,6 +177,17 @@ export function SceneMediaPlannerPanel({
               </button>
             );
           })}
+
+          {!isReadOnly && onAddScene && (
+            <button
+              type="button"
+              onClick={onAddScene}
+              className="flex items-center justify-center w-7 h-7 rounded-xl bg-dark-950/80 border border-dashed border-dark-700 text-slate-400 hover:text-aura-300 hover:border-aura-500/50 transition-all shrink-0"
+              title="Agregar nueva escena final de producción"
+            >
+              <Plus className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
 
         {onSyncToAllPlatforms && (
@@ -166,13 +210,72 @@ export function SceneMediaPlannerPanel({
           {/* Main Scene Slot Header */}
           <div className="p-3.5 bg-dark-950/80 border border-dark-800 rounded-2xl space-y-2.5">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                Escena #{currentScene.scene_number}
-                <span className="text-[11px] text-slate-400 font-normal">
-                  ({currentScene.duration_seconds}s)
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                  Escena #{currentScene.scene_number}
                 </span>
-              </span>
-              {getSourceBadge(currentScene.source, currentScene.status)}
+
+                {/* Duration Editor */}
+                <div className="flex items-center gap-1 bg-dark-900 px-2 py-0.5 rounded-lg border border-dark-800 text-[11px] text-slate-300">
+                  <Clock className="w-3 h-3 text-aura-400" />
+                  {!isReadOnly && onUpdateSceneDuration ? (
+                    <input
+                      type="number"
+                      min={1}
+                      max={180}
+                      value={currentScene.duration_seconds || 5}
+                      onChange={(e) => onUpdateSceneDuration(currentScene.scene_number, parseInt(e.target.value, 10) || 5)}
+                      className="w-8 bg-transparent text-center text-white focus:outline-none font-bold"
+                    />
+                  ) : (
+                    <span>{currentScene.duration_seconds}</span>
+                  )}
+                  <span>s</span>
+                  {currentScene.asset_duration_seconds && (
+                    <span className="text-[10px] text-slate-500 ml-0.5" title={`Duración física del video: ${currentScene.asset_duration_seconds}s`}>
+                      ({Math.round(currentScene.asset_duration_seconds)}s orig)
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                {!isReadOnly && onReorderScenes && scenes.length > 1 && (
+                  <div className="flex items-center gap-0.5 bg-dark-900 p-0.5 rounded-lg border border-dark-800">
+                    <button
+                      type="button"
+                      disabled={activeSceneIndex === 0}
+                      onClick={() => handleMoveScene('left')}
+                      className="p-1 text-slate-400 hover:text-white disabled:opacity-30 disabled:hover:text-slate-400"
+                      title="Mover escena a la izquierda"
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={activeSceneIndex === scenes.length - 1}
+                      onClick={() => handleMoveScene('right')}
+                      className="p-1 text-slate-400 hover:text-white disabled:opacity-30 disabled:hover:text-slate-400"
+                      title="Mover escena a la derecha"
+                    >
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+
+                {!isReadOnly && onRemoveScene && scenes.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => onRemoveScene(currentScene.scene_number)}
+                    className="p-1.5 text-slate-400 hover:text-rose-400 bg-dark-900 hover:bg-rose-950/30 rounded-lg border border-dark-800 transition-colors"
+                    title="Eliminar escena final"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
+
+                {getSourceBadge(currentScene.source, currentScene.status)}
+              </div>
             </div>
 
             {/* Asset assignment bar */}
@@ -197,8 +300,21 @@ export function SceneMediaPlannerPanel({
                     leftIcon={<FolderOpen className="w-3 h-3" />}
                     className="text-[11px] h-7 px-2.5 hover:border-aura-500/50"
                   >
-                    Asignar
+                    {currentScene.status === 'resolved' ? 'Cambiar' : 'Asignar'}
                   </Button>
+
+                  {currentScene.status === 'resolved' && onRemoveAssetFromScene && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => onRemoveAssetFromScene(currentScene.scene_number)}
+                      className="text-[11px] h-7 px-2 text-slate-400 hover:text-rose-300"
+                      title="Desvincular asset de esta escena"
+                    >
+                      <XCircle className="w-3.5 h-3.5" />
+                    </Button>
+                  )}
+
                   {currentScene.status === 'needs_asset' && (
                     <Button
                       variant="ghost"

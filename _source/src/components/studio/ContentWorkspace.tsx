@@ -6,11 +6,17 @@ import {
   PlatformAdaptation,
   TargetPlatform,
   PublicationPackage,
+  SceneMediaPlan,
 } from '../../types/platformAdaptation';
 import {
   getPlatformAdaptations,
   generateDefaultAdaptations,
   updateAdaptationSceneAsset,
+  removeAdaptationSceneAsset,
+  reorderAdaptationScenes,
+  addAdaptationScene,
+  removeAdaptationScene,
+  updateAdaptationSceneDuration,
   savePlatformAdaptation,
   approvePlatformAdaptation,
   syncScenesToAllAdaptations,
@@ -300,22 +306,132 @@ export function ContentWorkspace({
     }
   };
 
-  const handleSyncAllPlatforms = async () => {
+  const handleRemoveAssetFromScene = async (sceneNumber: number) => {
     if (!activeAdaptation) return;
     try {
-      const synced = await syncScenesToAllAdaptations(
+      const updated = await removeAdaptationSceneAsset(
+        activeAdaptation,
+        sceneNumber,
+        item.brands?.name || 'Aura Social'
+      );
+      setAdaptations((prev) =>
+        prev.map((a) => (a.id === updated.id ? updated : a))
+      );
+      toast('Asset desvinculado', {
+        type: 'info',
+        description: `La Escena #${sceneNumber} volvió al estado pendiente de recurso.`,
+      });
+    } catch (err: any) {
+      toast('Error al desvincular asset', {
+        type: 'error',
+        description: err.message,
+      });
+    }
+  };
+
+  const handleReorderScenes = async (newScenes: SceneMediaPlan[]) => {
+    if (!activeAdaptation) return;
+    try {
+      const updated = await reorderAdaptationScenes(
+        activeAdaptation,
+        newScenes,
+        item.brands?.name || 'Aura Social'
+      );
+      setAdaptations((prev) =>
+        prev.map((a) => (a.id === updated.id ? updated : a))
+      );
+    } catch (err: any) {
+      toast('Error al reordenar escenas', {
+        type: 'error',
+        description: err.message,
+      });
+    }
+  };
+
+  const handleAddScene = async () => {
+    if (!activeAdaptation) return;
+    try {
+      const updated = await addAdaptationScene(
+        activeAdaptation,
+        item.brands?.name || 'Aura Social'
+      );
+      setAdaptations((prev) =>
+        prev.map((a) => (a.id === updated.id ? updated : a))
+      );
+      setActiveSceneNumber(updated.scene_mappings.length);
+      toast('Nueva escena añadida', {
+        type: 'success',
+        description: `Se añadió la Escena #${updated.scene_mappings.length} al timeline.`,
+      });
+    } catch (err: any) {
+      toast('Error al añadir escena', {
+        type: 'error',
+        description: err.message,
+      });
+    }
+  };
+
+  const handleRemoveScene = async (sceneNumber: number) => {
+    if (!activeAdaptation) return;
+    try {
+      const updated = await removeAdaptationScene(
+        activeAdaptation,
+        sceneNumber,
+        item.brands?.name || 'Aura Social'
+      );
+      setAdaptations((prev) =>
+        prev.map((a) => (a.id === updated.id ? updated : a))
+      );
+      setActiveSceneNumber(Math.max(1, Math.min(sceneNumber, updated.scene_mappings.length)));
+      toast('Escena eliminada', {
+        type: 'info',
+        description: `Se eliminó la escena y se re-indexó el timeline.`,
+      });
+    } catch (err: any) {
+      toast('Error al eliminar escena', {
+        type: 'error',
+        description: err.message,
+      });
+    }
+  };
+
+  const handleUpdateSceneDuration = async (sceneNumber: number, durationSeconds: number) => {
+    if (!activeAdaptation) return;
+    try {
+      const updated = await updateAdaptationSceneDuration(
+        activeAdaptation,
+        sceneNumber,
+        durationSeconds,
+        item.brands?.name || 'Aura Social'
+      );
+      setAdaptations((prev) =>
+        prev.map((a) => (a.id === updated.id ? updated : a))
+      );
+    } catch (err: any) {
+      toast('Error al actualizar duración', {
+        type: 'error',
+        description: err.message,
+      });
+    }
+  };
+
+  const handleSyncAllPlatforms = async () => {
+    if (!activeAdaptation) return;
+
+    try {
+      const allSynced = await syncScenesToAllAdaptations(
         item.id,
         activeAdaptation.scene_mappings,
         item.brands?.name || 'Aura Social',
         currentVersion?.id
       );
-      setAdaptations(synced);
-      toast('¡Escenas sincronizadas!', {
+      setAdaptations(allSynced);
+      toast('¡Sincronización Multiplataforma Completa!', {
         type: 'success',
-        description: 'La estructura de medios y overlays se aplicó a todas las plataformas.',
+        description: `Se sincronizaron los recursos de las ${activeAdaptation.scene_mappings.length} escenas a todas las adaptaciones respetando sus formatos.`,
       });
     } catch (err: any) {
-      toast('Error de sincronización', {
+      toast('Error al sincronizar plataformas', {
         type: 'error',
         description: err.message,
       });
@@ -466,6 +582,11 @@ export function ContentWorkspace({
                 setSelectedSceneForAsset(sceneNum);
                 setIsAssetPickerOpen(true);
               }}
+              onRemoveAssetFromScene={handleRemoveAssetFromScene}
+              onReorderScenes={handleReorderScenes}
+              onAddScene={handleAddScene}
+              onRemoveScene={handleRemoveScene}
+              onUpdateSceneDuration={handleUpdateSceneDuration}
               onUpdateSceneText={handleUpdateSceneText}
               onUpdateSceneTextPosition={handleUpdateSceneTextPosition}
               onUsePlaceholder={handleUsePlaceholderForScene}
