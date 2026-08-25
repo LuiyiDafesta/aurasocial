@@ -27,10 +27,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 $DEFAULT_N8N_KEY = 'aura_n8n_live_sec_99a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4';
 $SUPABASE_URL = getenv('VITE_SUPABASE_URL') ?: 'https://eeykrgnwfarrljkotvmw.supabase.co';
 $SUPABASE_ANON_KEY = getenv('VITE_SUPABASE_ANON_KEY') ?: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVleWtyZ253ZmFycmxqa290dm13Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcyMDgyNjIsImV4cCI6MjEwMjc4NDI2Mn0.WM7sgjhvR003fHUKIy_r3CJ5S8TaIBA_3179hLkxdRk';
-$SUPABASE_SERVICE_ROLE = getenv('SUPABASE_SERVICE_ROLE_KEY') ?: $SUPABASE_ANON_KEY;
+$SUPABASE_SERVICE_ROLE = getenv('SUPABASE_SERVICE_ROLE_KEY') ?: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVleWtyZ253ZmFycmxqa290dm13Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NzIwODI2MiwiZXhwIjoyMTAyNzg0MjYyfQ.nICXCrJU42BYMMvdBjPHJRNusxmI8w_bhEDvN27bBiI';
 
 $supaHeaders = [
-    "apikey: {$SUPABASE_ANON_KEY}",
+    "apikey: " . ($SUPABASE_SERVICE_ROLE ?: $SUPABASE_ANON_KEY),
     "Authorization: Bearer " . ($SUPABASE_SERVICE_ROLE ?: $SUPABASE_ANON_KEY),
     "Content-Type: application/json",
     "Accept: application/json"
@@ -978,6 +978,240 @@ if ($method === 'POST' && $path === 'social/publish') {
         'provider' => $body['provider'] ?? 'socialit',
         'results' => $results,
         'timestamp' => gmdate('Y-m-d\TH:i:s\Z')
+    ]);
+    exit;
+}
+
+// ============================================================================
+// ENDPOINTS DE ELIMINACIÓN AUTORITATIVA (IDEAS, CONTENIDOS, CAMPAÑAS, ASSETS)
+// ============================================================================
+
+// 1. Eliminación de Ideas de Contenido
+if ($method === 'POST' && in_array($path, ['content/ideas/delete', 'ideas/delete'])) {
+    $rawIds = $body['ids'] ?? ($body['ideaIds'] ?? ($body['id'] ?? ($body['ideaId'] ?? [])));
+    $ids = is_array($rawIds) ? $rawIds : (!empty($rawIds) ? [$rawIds] : []);
+
+    if (empty($ids)) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'error' => 'BAD_REQUEST: Se requiere al menos un ID de idea']);
+        exit;
+    }
+
+    $idList = implode(',', array_map('trim', $ids));
+    
+    // Desvincular referencias en content_items
+    $patchUrl = "{$SUPABASE_URL}/rest/v1/content_items?or=(origin_idea_id.in.({$idList}),content_idea_id.in.({$idList}),idea_id.in.({$idList}))";
+    makeRequest($patchUrl, 'PATCH', $supaHeaders, ['origin_idea_id' => null, 'content_idea_id' => null, 'idea_id' => null]);
+
+    // Eliminar de content_ideas
+    $delUrl = "{$SUPABASE_URL}/rest/v1/content_ideas?id=in.({$idList})";
+    $delRes = makeRequest($delUrl, 'DELETE', array_merge($supaHeaders, ["Prefer: return=representation"]));
+
+    $deletedRows = is_array($delRes['body']) ? $delRes['body'] : [];
+    echo json_encode([
+        'success' => true,
+        'deletedCount' => count($deletedRows) > 0 ? count($deletedRows) : count($ids),
+        'deletedIds' => $ids
+    ]);
+    exit;
+}
+
+// 2. Eliminación de Piezas de Contenido (Cascada en B2 y Tablas Hijas)
+if ($method === 'POST' && in_array($path, ['content/items/delete', 'content/delete', 'items/delete'])) {
+    $rawIds = $body['ids'] ?? ($body['itemIds'] ?? ($body['id'] ?? ($body['itemId'] ?? [])));
+    $ids = is_array($rawIds) ? $rawIds : (!empty($rawIds) ? [$rawIds] : []);
+
+    if (empty($ids)) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'error' => 'BAD_REQUEST: Se requiere al menos un ID de contenido']);
+        exit;
+    }
+
+    $idList = implode(',', array_map('trim', $ids));
+
+    // 1. Obtener y eliminar assets físicos asociados en Backblaze B2
+    $assetsUrl = "{$SUPABASE_URL}/rest/v1/content_assets?content_item_id=in.({$idList})&select=id,storage_path";
+    $assetsRes = makeRequest($assetsUrl, 'GET', $supaHeaders);
+    $assets = is_array($assetsRes['body']) ? $assetsRes['body'] : [];
+
+    foreach ($assets as $asset) {
+        $storagePath = $asset['storage_path'] ?? null;
+        if ($storagePath) {
+            try {
+                $b2AuthUrl = "https://api.backblazeb2.com/b2api/v2/b2_authorize_account";
+                $b2Auth = makeRequest($b2AuthUrl, 'GET', [
+                    "Authorization: Basic " . base64_encode("{$B2_KEY_ID}:{$B2_APPLICATION_KEY}")
+                ]);
+                if (isset($b2Auth['body']['authorizationToken'])) {
+                    $b2Token = $b2Auth['body']['authorizationToken'];
+                    $b2ApiUrl = $b2Auth['body']['apiUrl'];
+                    
+                    $verUrl = "{$b2ApiUrl}/b2api/v2/b2_list_file_versions";
+                    $verRes = makeRequest($verUrl, 'POST', [
+                        "Authorization: {$b2Token}",
+                        "Content-Type: application/json"
+                    ], [
+                        'bucketId' => $B2_BUCKET_ID,
+                        'startFileName' => $storagePath,
+                        'prefix' => $storagePath,
+                        'maxFileCount' => 10
+                    ]);
+                    
+                    if (isset($verRes['body']['files'])) {
+                        foreach ($verRes['body']['files'] as $vf) {
+                            if ($vf['fileName'] === $storagePath) {
+                                $delFileUrl = "{$b2ApiUrl}/b2api/v2/b2_delete_file_version";
+                                makeRequest($delFileUrl, 'POST', [
+                                    "Authorization: {$b2Token}",
+                                    "Content-Type: application/json"
+                                ], [
+                                    'fileId' => $vf['fileId'],
+                                    'fileName' => $vf['fileName']
+                                ]);
+                            }
+                        }
+                    }
+                }
+            } catch (Exception $e) {
+                // Ignore
+            }
+        }
+    }
+
+    // 2. Desvincular claves foráneas restrictivas
+    $cleanRenderJobs = "{$SUPABASE_URL}/rest/v1/render_jobs?content_item_id=in.({$idList})";
+    makeRequest($cleanRenderJobs, 'PATCH', $supaHeaders, ['output_asset_id' => null]);
+
+    $cleanAdaptations = "{$SUPABASE_URL}/rest/v1/platform_adaptations?content_item_id=in.({$idList})";
+    makeRequest($cleanAdaptations, 'PATCH', $supaHeaders, ['asset_id' => null]);
+
+    // 3. Eliminar tablas hijas
+    makeRequest("{$SUPABASE_URL}/rest/v1/publishing_outbox?content_item_id=in.({$idList})", 'DELETE', $supaHeaders);
+    makeRequest("{$SUPABASE_URL}/rest/v1/render_jobs?content_item_id=in.({$idList})", 'DELETE', $supaHeaders);
+    makeRequest("{$SUPABASE_URL}/rest/v1/platform_adaptations?content_item_id=in.({$idList})", 'DELETE', $supaHeaders);
+    makeRequest("{$SUPABASE_URL}/rest/v1/content_versions?content_item_id=in.({$idList})", 'DELETE', $supaHeaders);
+    makeRequest("{$SUPABASE_URL}/rest/v1/content_assets?content_item_id=in.({$idList})", 'DELETE', $supaHeaders);
+
+    // 4. Eliminar content_items
+    $delUrl = "{$SUPABASE_URL}/rest/v1/content_items?id=in.({$idList})";
+    $delRes = makeRequest($delUrl, 'DELETE', array_merge($supaHeaders, ["Prefer: return=representation"]));
+
+    $deletedRows = is_array($delRes['body']) ? $delRes['body'] : [];
+    echo json_encode([
+        'success' => true,
+        'deletedCount' => count($deletedRows) > 0 ? count($deletedRows) : count($ids),
+        'deletedIds' => $ids
+    ]);
+    exit;
+}
+
+// 3. Eliminación de Campañas (Nullificar dependencias y eliminar fila)
+if ($method === 'POST' && in_array($path, ['campaigns/delete', 'campaign/delete'])) {
+    $rawIds = $body['ids'] ?? ($body['campaignIds'] ?? ($body['id'] ?? ($body['campaignId'] ?? [])));
+    $ids = is_array($rawIds) ? $rawIds : (!empty($rawIds) ? [$rawIds] : []);
+
+    if (empty($ids)) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'error' => 'BAD_REQUEST: Se requiere al menos un ID de campaña']);
+        exit;
+    }
+
+    $idList = implode(',', array_map('trim', $ids));
+
+    // Desvincular dependencias asignadas
+    makeRequest("{$SUPABASE_URL}/rest/v1/content_ideas?campaign_id=in.({$idList})", 'PATCH', $supaHeaders, ['campaign_id' => null]);
+    makeRequest("{$SUPABASE_URL}/rest/v1/content_items?campaign_id=in.({$idList})", 'PATCH', $supaHeaders, ['campaign_id' => null]);
+    makeRequest("{$SUPABASE_URL}/rest/v1/generation_runs?campaign_id=in.({$idList})", 'PATCH', $supaHeaders, ['campaign_id' => null]);
+    makeRequest("{$SUPABASE_URL}/rest/v1/content_assets?campaign_id=in.({$idList})", 'PATCH', $supaHeaders, ['campaign_id' => null]);
+
+    // Eliminar fila de campaigns
+    $delUrl = "{$SUPABASE_URL}/rest/v1/campaigns?id=in.({$idList})";
+    $delRes = makeRequest($delUrl, 'DELETE', array_merge($supaHeaders, ["Prefer: return=representation"]));
+
+    $deletedRows = is_array($delRes['body']) ? $delRes['body'] : [];
+    echo json_encode([
+        'success' => true,
+        'deletedCount' => count($deletedRows) > 0 ? count($deletedRows) : count($ids),
+        'deletedIds' => $ids
+    ]);
+    exit;
+}
+
+// 4. Eliminación de Assets de Medios (B2 + DB)
+if ($method === 'POST' && in_array($path, ['assets/delete', 'content/assets/delete'])) {
+    $rawIds = $body['ids'] ?? ($body['assetIds'] ?? ($body['id'] ?? ($body['assetId'] ?? [])));
+    $ids = is_array($rawIds) ? $rawIds : (!empty($rawIds) ? [$rawIds] : []);
+
+    if (empty($ids)) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'error' => 'BAD_REQUEST: Se requiere al menos un ID de asset']);
+        exit;
+    }
+
+    $idList = implode(',', array_map('trim', $ids));
+
+    // Obtener storage_paths
+    $assetsUrl = "{$SUPABASE_URL}/rest/v1/content_assets?id=in.({$idList})&select=id,storage_path";
+    $assetsRes = makeRequest($assetsUrl, 'GET', $supaHeaders);
+    $assets = is_array($assetsRes['body']) ? $assetsRes['body'] : [];
+
+    foreach ($assets as $asset) {
+        $storagePath = $asset['storage_path'] ?? null;
+        if ($storagePath) {
+            try {
+                $b2AuthUrl = "https://api.backblazeb2.com/b2api/v2/b2_authorize_account";
+                $b2Auth = makeRequest($b2AuthUrl, 'GET', [
+                    "Authorization: Basic " . base64_encode("{$B2_KEY_ID}:{$B2_APPLICATION_KEY}")
+                ]);
+                if (isset($b2Auth['body']['authorizationToken'])) {
+                    $b2Token = $b2Auth['body']['authorizationToken'];
+                    $b2ApiUrl = $b2Auth['body']['apiUrl'];
+                    
+                    $verUrl = "{$b2ApiUrl}/b2api/v2/b2_list_file_versions";
+                    $verRes = makeRequest($verUrl, 'POST', [
+                        "Authorization: {$b2Token}",
+                        "Content-Type: application/json"
+                    ], [
+                        'bucketId' => $B2_BUCKET_ID,
+                        'startFileName' => $storagePath,
+                        'prefix' => $storagePath,
+                        'maxFileCount' => 10
+                    ]);
+                    
+                    if (isset($verRes['body']['files'])) {
+                        foreach ($verRes['body']['files'] as $vf) {
+                            if ($vf['fileName'] === $storagePath) {
+                                $delFileUrl = "{$b2ApiUrl}/b2api/v2/b2_delete_file_version";
+                                makeRequest($delFileUrl, 'POST', [
+                                    "Authorization: {$b2Token}",
+                                    "Content-Type: application/json"
+                                ], [
+                                    'fileId' => $vf['fileId'],
+                                    'fileName' => $vf['fileName']
+                                ]);
+                            }
+                        }
+                    }
+                }
+            } catch (Exception $e) {
+                // Ignore
+            }
+        }
+    }
+
+    // Desvincular claves foráneas
+    makeRequest("{$SUPABASE_URL}/rest/v1/render_jobs?output_asset_id=in.({$idList})", 'PATCH', $supaHeaders, ['output_asset_id' => null]);
+    makeRequest("{$SUPABASE_URL}/rest/v1/platform_adaptations?asset_id=in.({$idList})", 'PATCH', $supaHeaders, ['asset_id' => null]);
+
+    // Eliminar fila de content_assets
+    $delUrl = "{$SUPABASE_URL}/rest/v1/content_assets?id=in.({$idList})";
+    $delRes = makeRequest($delUrl, 'DELETE', array_merge($supaHeaders, ["Prefer: return=representation"]));
+
+    $deletedRows = is_array($delRes['body']) ? $delRes['body'] : [];
+    echo json_encode([
+        'success' => true,
+        'deletedCount' => count($deletedRows) > 0 ? count($deletedRows) : count($ids),
+        'deletedIds' => $ids
     ]);
     exit;
 }

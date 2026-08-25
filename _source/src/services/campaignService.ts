@@ -292,23 +292,35 @@ export async function archiveCampaign(campaignId: string): Promise<Campaign> {
 export async function deleteCampaign(campaignId: string): Promise<void> {
   if (!campaignId) throw new Error('campaignId es requerido');
 
-  // 1. Desvincular dependencias asignadas
-  await Promise.allSettled([
-    supabase.from('content_ideas').update({ campaign_id: null }).eq('campaign_id', campaignId),
-    supabase.from('content_items').update({ campaign_id: null }).eq('campaign_id', campaignId),
-    supabase.from('generation_runs').update({ campaign_id: null }).eq('campaign_id', campaignId),
-    supabase.from('content_assets').update({ campaign_id: null }).eq('campaign_id', campaignId),
-  ]);
+  try {
+    const res = await fetch('/api/campaigns/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: campaignId }),
+    });
+    const json = await res.json();
+    if (!json.success) {
+      throw new Error(json.error || 'Error al eliminar campaña');
+    }
+  } catch (err: any) {
+    // 1. Desvincular dependencias asignadas
+    await Promise.allSettled([
+      supabase.from('content_ideas').update({ campaign_id: null }).eq('campaign_id', campaignId),
+      supabase.from('content_items').update({ campaign_id: null }).eq('campaign_id', campaignId),
+      supabase.from('generation_runs').update({ campaign_id: null }).eq('campaign_id', campaignId),
+      supabase.from('content_assets').update({ campaign_id: null }).eq('campaign_id', campaignId),
+    ]);
 
-  // 2. Eliminar fila de campaigns
-  const { error } = await supabase
-    .from('campaigns')
-    .delete()
-    .eq('id', campaignId);
+    // 2. Eliminar fila de campaigns
+    const { error } = await supabase
+      .from('campaigns')
+      .delete()
+      .eq('id', campaignId);
 
-  if (error) {
-    console.error(`Error al eliminar campaña (${campaignId}):`, error);
-    throw new Error(`Error al eliminar campaña: ${error.message}`);
+    if (error) {
+      console.error(`Error al eliminar campaña (${campaignId}):`, error);
+      throw new Error(`Error al eliminar campaña: ${error.message}`);
+    }
   }
 }
 
@@ -320,24 +332,37 @@ export async function deleteCampaignsBulk(campaignIds: string[]): Promise<{ dele
     return { deletedCount: 0 };
   }
 
-  // 1. Desvincular dependencias en lote
-  await Promise.allSettled([
-    supabase.from('content_ideas').update({ campaign_id: null }).in('campaign_id', campaignIds),
-    supabase.from('content_items').update({ campaign_id: null }).in('campaign_id', campaignIds),
-    supabase.from('generation_runs').update({ campaign_id: null }).in('campaign_id', campaignIds),
-    supabase.from('content_assets').update({ campaign_id: null }).in('campaign_id', campaignIds),
-  ]);
+  try {
+    const res = await fetch('/api/campaigns/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: campaignIds }),
+    });
+    const json = await res.json();
+    if (json.success) {
+      return { deletedCount: json.deletedCount || campaignIds.length };
+    }
+    throw new Error(json.error || 'Error al eliminar campañas');
+  } catch (err: any) {
+    // 1. Desvincular dependencias en lote
+    await Promise.allSettled([
+      supabase.from('content_ideas').update({ campaign_id: null }).in('campaign_id', campaignIds),
+      supabase.from('content_items').update({ campaign_id: null }).in('campaign_id', campaignIds),
+      supabase.from('generation_runs').update({ campaign_id: null }).in('campaign_id', campaignIds),
+      supabase.from('content_assets').update({ campaign_id: null }).in('campaign_id', campaignIds),
+    ]);
 
-  // 2. Eliminar registros de campaigns
-  const { error } = await supabase
-    .from('campaigns')
-    .delete()
-    .in('id', campaignIds);
+    // 2. Eliminar registros de campaigns
+    const { error } = await supabase
+      .from('campaigns')
+      .delete()
+      .in('id', campaignIds);
 
-  if (error) {
-    console.error('Error al eliminar campañas en lote:', error);
-    throw new Error(`Error al eliminar campañas: ${error.message}`);
+    if (error) {
+      console.error('Error al eliminar campañas en lote:', error);
+      throw new Error(`Error al eliminar campañas: ${error.message}`);
+    }
+
+    return { deletedCount: campaignIds.length };
   }
-
-  return { deletedCount: campaignIds.length };
 }

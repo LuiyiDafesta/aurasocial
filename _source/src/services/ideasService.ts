@@ -125,20 +125,32 @@ export async function getBrandIdeaPillars(workspaceId?: string | null, brandId?:
 export async function deleteIdea(ideaId: string): Promise<void> {
   if (!ideaId) throw new Error('ideaId es requerido');
 
-  // Desvincular referencias en content_items
-  await Promise.allSettled([
-    supabase.from('content_items').update({ origin_idea_id: null }).eq('origin_idea_id', ideaId),
-    supabase.from('content_items').update({ content_idea_id: null }).eq('content_idea_id', ideaId),
-  ]);
+  try {
+    const res = await fetch('/api/content/ideas/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: ideaId }),
+    });
+    const json = await res.json();
+    if (!json.success) {
+      throw new Error(json.error || 'Error al eliminar idea');
+    }
+  } catch (err: any) {
+    // Fallback directo a Supabase
+    await Promise.allSettled([
+      supabase.from('content_items').update({ origin_idea_id: null }).eq('origin_idea_id', ideaId),
+      supabase.from('content_items').update({ content_idea_id: null }).eq('content_idea_id', ideaId),
+    ]);
 
-  const { error } = await supabase
-    .from('content_ideas')
-    .delete()
-    .eq('id', ideaId);
+    const { error } = await supabase
+      .from('content_ideas')
+      .delete()
+      .eq('id', ideaId);
 
-  if (error) {
-    console.error(`Error al eliminar idea (${ideaId}):`, error);
-    throw new Error(`Error al eliminar idea: ${error.message}`);
+    if (error) {
+      console.error(`Error al eliminar idea (${ideaId}):`, error);
+      throw new Error(`Error al eliminar idea: ${error.message}`);
+    }
   }
 }
 
@@ -150,21 +162,34 @@ export async function deleteIdeasBulk(ideaIds: string[]): Promise<{ deletedCount
     return { deletedCount: 0 };
   }
 
-  // Desvincular referencias en content_items en lote
-  await Promise.allSettled([
-    supabase.from('content_items').update({ origin_idea_id: null }).in('origin_idea_id', ideaIds),
-    supabase.from('content_items').update({ content_idea_id: null }).in('content_idea_id', ideaIds),
-  ]);
+  try {
+    const res = await fetch('/api/content/ideas/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: ideaIds }),
+    });
+    const json = await res.json();
+    if (json.success) {
+      return { deletedCount: json.deletedCount || ideaIds.length };
+    }
+    throw new Error(json.error || 'Error al eliminar ideas');
+  } catch (err: any) {
+    // Fallback directo a Supabase
+    await Promise.allSettled([
+      supabase.from('content_items').update({ origin_idea_id: null }).in('origin_idea_id', ideaIds),
+      supabase.from('content_items').update({ content_idea_id: null }).in('content_idea_id', ideaIds),
+    ]);
 
-  const { error } = await supabase
-    .from('content_ideas')
-    .delete()
-    .in('id', ideaIds);
+    const { error } = await supabase
+      .from('content_ideas')
+      .delete()
+      .in('id', ideaIds);
 
-  if (error) {
-    console.error('Error al eliminar ideas en lote:', error);
-    throw new Error(`Error al eliminar ideas: ${error.message}`);
+    if (error) {
+      console.error('Error al eliminar ideas en lote:', error);
+      throw new Error(`Error al eliminar ideas: ${error.message}`);
+    }
+
+    return { deletedCount: ideaIds.length };
   }
-
-  return { deletedCount: ideaIds.length };
 }

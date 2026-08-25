@@ -373,41 +373,53 @@ export async function getAssetById(assetId: string): Promise<ContentAsset | null
 export async function deleteAsset(assetId: string): Promise<void> {
   if (!assetId) throw new Error('assetId es requerido');
 
-  // 1. Obtener registro para saber el storage_path
-  const { data: asset, error: fetchError } = await supabase
-    .from('content_assets')
-    .select('id, storage_bucket, storage_path')
-    .eq('id', assetId)
-    .single();
-
-  if (fetchError || !asset) {
-    throw new Error('No se encontró el asset a eliminar');
-  }
-
-  // 2. Eliminar archivo físico de Backblaze B2 Storage
   try {
-    if (asset.storage_path) {
-      await deleteFromB2(asset.storage_path);
+    const res = await fetch('/api/assets/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: assetId }),
+    });
+    const json = await res.json();
+    if (!json.success) {
+      throw new Error(json.error || 'Error al eliminar asset');
     }
-  } catch (storageError) {
-    console.warn(`Aviso: Error al eliminar archivo de Backblaze B2 (${asset.storage_path}):`, storageError);
-  }
+  } catch (err: any) {
+    // 1. Obtener registro para saber el storage_path
+    const { data: asset, error: fetchError } = await supabase
+      .from('content_assets')
+      .select('id, storage_bucket, storage_path')
+      .eq('id', assetId)
+      .single();
 
-  // 3. Desvincular de tablas que puedan tener Foreign Keys
-  await Promise.allSettled([
-    supabase.from('render_jobs').update({ output_asset_id: null }).eq('output_asset_id', assetId),
-    supabase.from('platform_adaptations').update({ asset_id: null }).eq('asset_id', assetId),
-  ]);
+    if (fetchError || !asset) {
+      throw new Error('No se encontró el asset a eliminar');
+    }
 
-  // 4. Eliminar fila de content_assets
-  const { error: dbError } = await supabase
-    .from('content_assets')
-    .delete()
-    .eq('id', assetId);
+    // 2. Eliminar archivo físico de Backblaze B2 Storage
+    try {
+      if (asset.storage_path) {
+        await deleteFromB2(asset.storage_path);
+      }
+    } catch (storageError) {
+      console.warn(`Aviso: Error al eliminar archivo de Backblaze B2 (${asset.storage_path}):`, storageError);
+    }
 
-  if (dbError) {
-    console.error('Error al eliminar fila de content_assets:', dbError);
-    throw new Error(`Error al eliminar registro de asset: ${dbError.message}`);
+    // 3. Desvincular de tablas que puedan tener Foreign Keys
+    await Promise.allSettled([
+      supabase.from('render_jobs').update({ output_asset_id: null }).eq('output_asset_id', assetId),
+      supabase.from('platform_adaptations').update({ asset_id: null }).eq('asset_id', assetId),
+    ]);
+
+    // 4. Eliminar fila de content_assets
+    const { error: dbError } = await supabase
+      .from('content_assets')
+      .delete()
+      .eq('id', assetId);
+
+    if (dbError) {
+      console.error('Error al eliminar fila de content_assets:', dbError);
+      throw new Error(`Error al eliminar registro de asset: ${dbError.message}`);
+    }
   }
 }
 
@@ -423,54 +435,67 @@ export async function deleteAssetsBulk(
     return { deletedCount: 0, errors: [] };
   }
 
-  // 1. Obtener registros para conocer los storage_paths
-  const { data: assets, error: fetchError } = await supabase
-    .from('content_assets')
-    .select('id, storage_bucket, storage_path')
-    .in('id', assetIds);
+  try {
+    const res = await fetch('/api/assets/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: assetIds }),
+    });
+    const json = await res.json();
+    if (json.success) {
+      return { deletedCount: json.deletedCount || assetIds.length, errors: [] };
+    }
+    throw new Error(json.error || 'Error al eliminar assets');
+  } catch (err: any) {
+    // 1. Obtener registros para conocer los storage_paths
+    const { data: assets, error: fetchError } = await supabase
+      .from('content_assets')
+      .select('id, storage_bucket, storage_path')
+      .in('id', assetIds);
 
-  if (fetchError || !assets) {
-    console.error('Error al consultar assets para eliminación masiva:', fetchError);
-    throw new Error(`Error al consultar assets: ${fetchError?.message || 'desconocido'}`);
-  }
+    if (fetchError || !assets) {
+      console.error('Error al consultar assets para eliminación masiva:', fetchError);
+      throw new Error(`Error al consultar assets: ${fetchError?.message || 'desconocido'}`);
+    }
 
-  const errors: string[] = [];
+    const errors: string[] = [];
 
-  // 2. Eliminar en paralelo los archivos físicos en Backblaze B2
-  await Promise.allSettled(
-    assets.map(async (asset) => {
-      try {
-        if (asset.storage_path) {
-          await deleteFromB2(asset.storage_path);
+    // 2. Eliminar en paralelo los archivos físicos en Backblaze B2
+    await Promise.allSettled(
+      assets.map(async (asset) => {
+        try {
+          if (asset.storage_path) {
+            await deleteFromB2(asset.storage_path);
+          }
+        } catch (b2Err: any) {
+          console.warn(`Aviso: No se pudo eliminar de B2 (${asset.storage_path}):`, b2Err?.message);
+          errors.push(`B2 (${asset.storage_path}): ${b2Err?.message}`);
         }
-      } catch (b2Err: any) {
-        console.warn(`Aviso: No se pudo eliminar de B2 (${asset.storage_path}):`, b2Err?.message);
-        errors.push(`B2 (${asset.storage_path}): ${b2Err?.message}`);
-      }
-    })
-  );
+      })
+    );
 
-  // 3. Desvincular de tablas dependientes
-  await Promise.allSettled([
-    supabase.from('render_jobs').update({ output_asset_id: null }).in('output_asset_id', assetIds),
-    supabase.from('platform_adaptations').update({ asset_id: null }).in('asset_id', assetIds),
-  ]);
+    // 3. Desvincular de tablas dependientes
+    await Promise.allSettled([
+      supabase.from('render_jobs').update({ output_asset_id: null }).in('output_asset_id', assetIds),
+      supabase.from('platform_adaptations').update({ asset_id: null }).in('asset_id', assetIds),
+    ]);
 
-  // 4. Eliminar todas las filas en PostgreSQL
-  const { error: dbError } = await supabase
-    .from('content_assets')
-    .delete()
-    .in('id', assetIds);
+    // 4. Eliminar todas las filas en PostgreSQL
+    const { error: dbError } = await supabase
+      .from('content_assets')
+      .delete()
+      .in('id', assetIds);
 
-  if (dbError) {
-    console.error('Error al eliminar registros masivos en content_assets:', dbError);
-    throw new Error(`Error al eliminar assets de base de datos: ${dbError.message}`);
+    if (dbError) {
+      console.error('Error al eliminar registros masivos en content_assets:', dbError);
+      throw new Error(`Error al eliminar assets de base de datos: ${dbError.message}`);
+    }
+
+    return {
+      deletedCount: assetIds.length,
+      errors,
+    };
   }
-
-  return {
-    deletedCount: assetIds.length,
-    errors,
-  };
 }
 
 /**

@@ -253,44 +253,56 @@ export async function scheduleContent(id: string, scheduledAtIso: string): Promi
 export async function deleteContentItem(id: string): Promise<void> {
   if (!id) throw new Error('id de contenido es requerido');
 
-  // 1. Obtener y eliminar assets físicos asociados específicamente a esta pieza de contenido
-  const { data: assets } = await supabase
-    .from('content_assets')
-    .select('storage_path')
-    .eq('content_item_id', id);
+  try {
+    const res = await fetch('/api/content/items/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    });
+    const json = await res.json();
+    if (!json.success) {
+      throw new Error(json.error || 'Error al eliminar contenido');
+    }
+  } catch (err: any) {
+    // 1. Obtener y eliminar assets físicos asociados específicamente a esta pieza de contenido
+    const { data: assets } = await supabase
+      .from('content_assets')
+      .select('storage_path')
+      .eq('content_item_id', id);
 
-  if (assets && assets.length > 0) {
-    await Promise.allSettled(
-      assets.map(async (a) => {
-        if (a.storage_path) {
-          try {
-            await deleteFromB2(a.storage_path);
-          } catch (b2Err) {
-            console.warn(`Aviso B2 al eliminar asset (${a.storage_path}):`, b2Err);
+    if (assets && assets.length > 0) {
+      await Promise.allSettled(
+        assets.map(async (a) => {
+          if (a.storage_path) {
+            try {
+              await deleteFromB2(a.storage_path);
+            } catch (b2Err) {
+              console.warn(`Aviso B2 al eliminar asset (${a.storage_path}):`, b2Err);
+            }
           }
-        }
-      })
-    );
-  }
+        })
+      );
+    }
 
-  // 2. Limpiar tablas hijas dependientes en orden seguro (evita bloqueo por Foreign Keys RESTRICT/NO ACTION)
-  await Promise.allSettled([
-    supabase.from('publishing_outbox').delete().eq('content_item_id', id),
-    supabase.from('render_jobs').delete().eq('content_item_id', id),
-    supabase.from('platform_adaptations').delete().eq('content_item_id', id),
-    supabase.from('content_versions').delete().eq('content_item_id', id),
-    supabase.from('content_assets').delete().eq('content_item_id', id),
-  ]);
+    // 2. Limpiar tablas hijas dependientes en orden seguro
+    await Promise.allSettled([
+      supabase.from('publishing_outbox').delete().eq('content_item_id', id),
+      supabase.from('render_jobs').delete().eq('content_item_id', id),
+      supabase.from('platform_adaptations').delete().eq('content_item_id', id),
+      supabase.from('content_versions').delete().eq('content_item_id', id),
+      supabase.from('content_assets').delete().eq('content_item_id', id),
+    ]);
 
-  // 3. Eliminar fila principal de content_items
-  const { error } = await supabase
-    .from('content_items')
-    .delete()
-    .eq('id', id);
+    // 3. Eliminar fila principal de content_items
+    const { error } = await supabase
+      .from('content_items')
+      .delete()
+      .eq('id', id);
 
-  if (error) {
-    console.error(`Error al eliminar contenido (${id}):`, error);
-    throw new Error(`Error al eliminar contenido: ${error.message}`);
+    if (error) {
+      console.error(`Error al eliminar contenido (${id}):`, error);
+      throw new Error(`Error al eliminar contenido: ${error.message}`);
+    }
   }
 }
 
@@ -302,45 +314,58 @@ export async function deleteContentItemsBulk(ids: string[]): Promise<{ deletedCo
     return { deletedCount: 0 };
   }
 
-  // 1. Obtener y eliminar assets físicos asociados a estos contenidos
-  const { data: assets } = await supabase
-    .from('content_assets')
-    .select('storage_path')
-    .in('content_item_id', ids);
+  try {
+    const res = await fetch('/api/content/items/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
+    });
+    const json = await res.json();
+    if (json.success) {
+      return { deletedCount: json.deletedCount || ids.length };
+    }
+    throw new Error(json.error || 'Error al eliminar contenidos');
+  } catch (err: any) {
+    // 1. Obtener y eliminar assets físicos asociados a estos contenidos
+    const { data: assets } = await supabase
+      .from('content_assets')
+      .select('storage_path')
+      .in('content_item_id', ids);
 
-  if (assets && assets.length > 0) {
-    await Promise.allSettled(
-      assets.map(async (a) => {
-        if (a.storage_path) {
-          try {
-            await deleteFromB2(a.storage_path);
-          } catch (b2Err) {
-            console.warn(`Aviso B2 al eliminar asset (${a.storage_path}):`, b2Err);
+    if (assets && assets.length > 0) {
+      await Promise.allSettled(
+        assets.map(async (a) => {
+          if (a.storage_path) {
+            try {
+              await deleteFromB2(a.storage_path);
+            } catch (b2Err) {
+              console.warn(`Aviso B2 al eliminar asset (${a.storage_path}):`, b2Err);
+            }
           }
-        }
-      })
-    );
+        })
+      );
+    }
+
+    // 2. Limpiar tablas hijas dependientes en lote
+    await Promise.allSettled([
+      supabase.from('publishing_outbox').delete().in('content_item_id', ids),
+      supabase.from('render_jobs').delete().in('content_item_id', ids),
+      supabase.from('platform_adaptations').delete().in('content_item_id', ids),
+      supabase.from('content_versions').delete().in('content_item_id', ids),
+      supabase.from('content_assets').delete().in('content_item_id', ids),
+    ]);
+
+    // 3. Eliminar registros de content_items
+    const { error } = await supabase
+      .from('content_items')
+      .delete()
+      .in('id', ids);
+
+    if (error) {
+      console.error('Error al eliminar contenidos en lote:', error);
+      throw new Error(`Error al eliminar contenidos: ${error.message}`);
+    }
+
+    return { deletedCount: ids.length };
   }
-
-  // 2. Limpiar tablas hijas dependientes en lote
-  await Promise.allSettled([
-    supabase.from('publishing_outbox').delete().in('content_item_id', ids),
-    supabase.from('render_jobs').delete().in('content_item_id', ids),
-    supabase.from('platform_adaptations').delete().in('content_item_id', ids),
-    supabase.from('content_versions').delete().in('content_item_id', ids),
-    supabase.from('content_assets').delete().in('content_item_id', ids),
-  ]);
-
-  // 3. Eliminar registros de content_items
-  const { error } = await supabase
-    .from('content_items')
-    .delete()
-    .in('id', ids);
-
-  if (error) {
-    console.error('Error al eliminar contenidos en lote:', error);
-    throw new Error(`Error al eliminar contenidos: ${error.message}`);
-  }
-
-  return { deletedCount: ids.length };
 }
