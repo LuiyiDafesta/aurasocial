@@ -735,11 +735,11 @@ if ($method === 'POST' && $path === 'social/accounts/bind') {
                         'id' => $newConn['id'] ?? $providerAccountId,
                         'workspace_id' => $workspaceId,
                         'brand_id' => $targetBrandId,
-                        'platform' => $newConn['platform'],
+                        'platform' => $newConn['platform'] ?? $insertData['platform'],
                         'provider' => $provider,
                         'provider_account_id' => $providerAccountId,
-                        'account_name' => $newConn['account_name'],
-                        'account_username' => $newConn['account_username'] ?? null,
+                        'account_name' => $newConn['account_name'] ?? $insertData['account_name'],
+                        'account_username' => $newConn['account_username'] ?? ($insertData['account_username'] ?? null),
                         'status' => 'connected'
                     ],
                     'already_bound' => false
