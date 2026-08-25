@@ -10,7 +10,7 @@ import { getPlatformAdaptation, buildRenderPackage } from './platformAdaptationS
 import { getB2SignedUrl } from '../lib/b2Storage';
 
 /**
- * Quality Guard para Render Jobs (Fase 12E.1):
+ * Quality Guard para Render Jobs (Fase 12E.1 / Fase 16.1):
  * Valida de forma estricta que la adaptación contenga escenas y que cada slot/escena requerida
  * tenga un asset asignado con una ruta de almacenamiento (storage_path) válida en Backblaze B2.
  */
@@ -31,9 +31,9 @@ export function validateMediaForRender(
   const errors: string[] = [];
   const missing_slots: MissingMediaDetail[] = [];
 
-  // 1. Validar existencia de escenas
+  // A. Validar existencia de al menos una escena
   if (scenes.length === 0) {
-    errors.push('La adaptación no tiene escenas definidas ni slots multimedia asignados.');
+    errors.push('snapshot has no scenes');
     missing_slots.push({
       scene_number: 1,
       reason: 'missing_asset',
@@ -44,67 +44,96 @@ export function validateMediaForRender(
       code: 'RENDER_MEDIA_REQUIRED',
       errors,
       missing_slots,
-      summary_message: 'Faltan medios para renderizar: La adaptación no contiene escenas ni slots multimedia configurados.',
+      summary_message: 'Faltan medios para renderizar: La adaptación no contiene escenas configuradas.',
     };
   }
 
-  // 2. Validar cada escena y slot multimedia requerido
+  // B, C, D. Validar cada escena y slot multimedia requerido
   for (let i = 0; i < scenes.length; i++) {
     const scene = scenes[i];
     const sceneNum = scene.scene_number || i + 1;
     const slotId = (scene as any).slot_id || `slot_sc${sceneNum}_01`;
 
-    // Validar asignación de asset
-    if (!scene.asset_id || typeof scene.asset_id !== 'string' || !scene.asset_id.trim()) {
-      errors.push(`Escena ${sceneNum}: No tiene asset multimedia asignado.`);
+    // D. Estado needs_asset explícito
+    if (scene.status === 'needs_asset' || (scene.source as string) === 'needs_asset') {
+      errors.push(`scene ${sceneNum} has status needs_asset`);
       missing_slots.push({
         scene_number: sceneNum,
         slot_id: slotId,
         reason: 'missing_asset',
-        message: `Escena ${sceneNum} (${slotId}): Falta asignar archivo de video/foto.`,
+        message: `scene ${sceneNum} tiene estado needs_asset (requiere asignación multimedia).`,
       });
     }
 
-    // Validar storage_path
+    // B. Validar asignación de asset_id
+    if (!scene.asset_id || typeof scene.asset_id !== 'string' || !scene.asset_id.trim()) {
+      errors.push(`scene ${sceneNum} has no asset_id`);
+      missing_slots.push({
+        scene_number: sceneNum,
+        slot_id: slotId,
+        reason: 'missing_asset',
+        message: `scene ${sceneNum} no tiene asset_id asignado.`,
+      });
+    }
+
+    // B. Validar storage_path
     if (!scene.storage_path || typeof scene.storage_path !== 'string' || !scene.storage_path.trim()) {
-      errors.push(`Escena ${sceneNum}: Ruta de almacenamiento vacía o inexistente (storage_path).`);
+      errors.push(`scene ${sceneNum} has no storage_path`);
       missing_slots.push({
         scene_number: sceneNum,
         slot_id: slotId,
         reason: 'empty_storage_path',
-        message: `Escena ${sceneNum} (${slotId}): Ruta de almacenamiento en Backblaze B2 no válida o vacía.`,
+        message: `scene ${sceneNum} no tiene storage_path válido en Backblaze B2.`,
       });
     }
 
-    // Validar duración
+    // C. Validar duración mayor a 0
     const duration = Number(scene.duration_seconds);
     if (isNaN(duration) || duration <= 0) {
-      errors.push(`Escena ${sceneNum}: Duración inválida (${scene.duration_seconds}s).`);
+      errors.push(`scene ${sceneNum} has invalid duration (${scene.duration_seconds}s)`);
       missing_slots.push({
         scene_number: sceneNum,
         slot_id: slotId,
         reason: 'invalid_duration',
-        message: `Escena ${sceneNum} (${slotId}): La duración debe ser mayor a 0 segundos.`,
+        message: `scene ${sceneNum} debe tener duración mayor a 0 segundos.`,
       });
     }
   }
 
-  // 3. Validar RenderPackage Snapshot
+  // E, F. Validar RenderPackage Snapshot
   const renderPackage = buildRenderPackage(adaptation);
+  if (!renderPackage.scenes || renderPackage.scenes.length === 0) {
+    if (errors.length === 0) {
+      errors.push('snapshot has no scenes');
+      missing_slots.push({
+        scene_number: 1,
+        reason: 'missing_asset',
+        message: 'Paquete de render sin escenas estructuradas.',
+      });
+    }
+  }
+
   if (!renderPackage.media_assets || renderPackage.media_assets.length === 0) {
     if (errors.length === 0) {
-      errors.push('El paquete de render no contiene ningún media asset reproducible.');
+      errors.push('snapshot has no media_assets');
       missing_slots.push({
         scene_number: 1,
         reason: 'missing_asset',
         message: 'Paquete de render sin media assets válidos.',
       });
     }
+  } else if (renderPackage.media_assets.length !== renderPackage.scenes.length) {
+    errors.push(`snapshot media_assets count (${renderPackage.media_assets.length}) does not match scenes count (${renderPackage.scenes.length})`);
+    missing_slots.push({
+      scene_number: renderPackage.scenes.length,
+      reason: 'missing_asset',
+      message: `Solo ${renderPackage.media_assets.length} de ${renderPackage.scenes.length} escenas tienen medios asignados.`,
+    });
   }
 
   if (renderPackage.duration_seconds <= 0) {
     if (errors.length === 0) {
-      errors.push('La duración total estimada del video es 0 segundos.');
+      errors.push('snapshot duration_seconds is 0');
     }
   }
 
@@ -184,7 +213,7 @@ export async function getRenderJobsForAdaptation(adaptationId: string): Promise<
 
 /**
  * Crea o recupera un Render Job con snapshot inmutable y despacha el worker determinista.
- * Quality Guard Fase 12E.1: Impide estrictamente la creación de jobs sin media válido.
+ * Quality Guard Fase 12E.1 / 16.1: Impide estrictamente la creación de jobs sin media válido.
  */
 export async function createRenderJob(
   adaptationId: string,
@@ -223,7 +252,23 @@ export async function createRenderJob(
   // 3. Snapshot inmutable del RenderPackage (Fase 9C Contract)
   const renderPackageSnapshot = buildRenderPackage(adaptation);
 
-  // 4. Crear registro de Render Job
+  // 4. Guardia Final antes de Insertar: Verificar integridad estricta del snapshot
+  if (
+    !renderPackageSnapshot.scenes ||
+    renderPackageSnapshot.scenes.length === 0 ||
+    !renderPackageSnapshot.media_assets ||
+    renderPackageSnapshot.media_assets.length === 0 ||
+    renderPackageSnapshot.media_assets.length !== renderPackageSnapshot.scenes.length ||
+    renderPackageSnapshot.scenes.some((s) => !s.asset?.storage_path || !s.asset?.asset_id)
+  ) {
+    const err: any = new Error(
+      'RENDER_MEDIA_REQUIRED: Fallo de verificación final del snapshot de render antes de insertar en base de datos.'
+    );
+    err.code = 'RENDER_MEDIA_REQUIRED';
+    throw err;
+  }
+
+  // 5. Crear registro de Render Job
   const payload = {
     workspace_id: adaptation.workspace_id,
     brand_id: adaptation.brand_id,
