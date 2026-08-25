@@ -1,9 +1,6 @@
 import { 
-  LayoutDashboard, 
   Lightbulb, 
   Layers, 
-  Calendar, 
-  BarChart3, 
   CheckCircle2, 
   Clock, 
   FileText, 
@@ -15,14 +12,17 @@ import {
   Linkedin,
   Globe,
   Radio,
-  Target
+  Target,
+  Settings,
+  Zap,
+  Film
 } from 'lucide-react';
 import { SocialAccount } from '../types/socialAccount';
 import { StatusCounts, Brand } from '../types/database';
 import { BrandSwitcher } from '../components/brands/BrandSwitcher';
 import { cn } from '../lib/utils';
 
-export type NavigationTab = 'dashboard' | 'campaigns' | 'ideas' | 'contenidos' | 'social_connections' | 'calendario' | 'analytics';
+export type NavigationTab = 'dashboard' | 'ideas' | 'contenidos' | 'campaigns' | 'assets' | 'settings';
 
 interface SidebarProps {
   currentTab: NavigationTab;
@@ -70,13 +70,12 @@ export function Sidebar({
   const activeAccountsCount = socialAccounts.filter((a) => a.is_connected && a.is_enabled).length;
 
   const navItems = [
-    { id: 'campaigns' as NavigationTab, label: 'Campañas', icon: Target, isPlaceholder: false },
+    { id: 'dashboard' as NavigationTab, label: 'Inicio', icon: Zap, isPlaceholder: false },
     { id: 'ideas' as NavigationTab, label: 'Ideas', icon: Lightbulb, isPlaceholder: false },
     { id: 'contenidos' as NavigationTab, label: 'Contenidos', icon: Layers, isPlaceholder: false },
-    { id: 'social_connections' as NavigationTab, label: 'Canales y Redes', icon: Globe, isPlaceholder: false },
-    { id: 'dashboard' as NavigationTab, label: 'Dashboard', icon: LayoutDashboard, isPlaceholder: true },
-    { id: 'calendario' as NavigationTab, label: 'Calendario', icon: Calendar, isPlaceholder: true },
-    { id: 'analytics' as NavigationTab, label: 'Analytics', icon: BarChart3, isPlaceholder: true },
+    { id: 'campaigns' as NavigationTab, label: 'Campañas', icon: Target, isPlaceholder: false },
+    { id: 'assets' as NavigationTab, label: 'Biblioteca Media', icon: Film, isPlaceholder: false },
+    { id: 'settings' as NavigationTab, label: 'Configuración & Canales', icon: Settings, isPlaceholder: false },
   ];
 
   const getPlatformIcon = (platform: string) => {
@@ -196,7 +195,7 @@ export function Sidebar({
 
       {/* Dynamic Connected Accounts Section */}
       <div 
-        onClick={() => onSelectTab('social_connections')}
+        onClick={() => onSelectTab('settings')}
         className="px-4 py-3 border-b border-dark-800/80 cursor-pointer hover:bg-dark-800/40 transition-all rounded-lg mx-2 my-1"
         title="Gestionar canales sociales y sincronización con n8n / Socialit"
       >

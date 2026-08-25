@@ -6,18 +6,19 @@ import { useContentStats } from './hooks/useContentStats';
 import { AuthPage } from './pages/AuthPage';
 import { MainLayout } from './layouts/MainLayout';
 import { NavigationTab } from './layouts/Sidebar';
-import { PlaceholderPage } from './pages/PlaceholderPage';
+import { DashboardPage } from './pages/DashboardPage';
 import { ContenidosPage } from './pages/ContenidosPage';
 import { IdeasPage } from './pages/IdeasPage';
 import { CampaignsPage } from './pages/CampaignsPage';
+import { AssetManagementStudio } from './components/assets/AssetManagementStudio';
 import { BrandFormModal } from './components/brands/BrandFormModal';
 import { Brand } from './types/database';
 import { SocialConnectionsPanel } from './components/publishing/SocialConnectionsPanel';
-import { LayoutDashboard, Calendar, BarChart3, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 
 export default function App() {
   const { user, isLoading: isAuthLoading, signOut, isAuthenticated } = useAuth();
-  const [currentTab, setCurrentTab] = useState<NavigationTab>('campaigns');
+  const [currentTab, setCurrentTab] = useState<NavigationTab>('dashboard');
 
   // Modal de edición / creación de marca global
   const [isBrandModalOpen, setIsBrandModalOpen] = useState<boolean>(false);
@@ -26,7 +27,7 @@ export default function App() {
   // Hooks de datos reales desde Supabase
   const { 
     currentWorkspace, 
-    brands,
+    brands, 
     currentBrand, 
     isLoading: isWorkspaceLoading,
     isSwitchingBrand,
@@ -65,10 +66,11 @@ export default function App() {
     switch (currentTab) {
       case 'dashboard':
         return (
-          <PlaceholderPage
-            title="Dashboard General"
-            description="Métricas globales de la marca, publicaciones recientes y estado del pipeline semanal de contenidos."
-            icon={LayoutDashboard}
+          <DashboardPage
+            currentBrand={currentBrand}
+            stats={stats}
+            socialAccounts={socialAccounts}
+            onNavigate={(tab) => setCurrentTab(tab)}
           />
         );
       case 'campaigns':
@@ -101,19 +103,22 @@ export default function App() {
             isSwitchingBrand={isSwitchingBrand}
           />
         );
-      case 'calendario':
-        return (
-          <PlaceholderPage
-            title="Calendario Editorial"
-            description="Visualización temporal de contenidos programados con zona horaria America/Argentina/Buenos_Aires."
-            icon={Calendar}
-          />
+      case 'assets':
+        return currentWorkspace && currentBrand ? (
+          <div className="p-8 max-w-7xl mx-auto space-y-6">
+            <AssetManagementStudio
+              workspaceId={currentWorkspace.id}
+              brand={currentBrand}
+            />
+          </div>
+        ) : (
+          <div className="p-8 text-center text-slate-400">Selecciona una marca para ver sus archivos</div>
         );
-      case 'social_connections':
+      case 'settings':
         return (
           <div className="p-8 max-w-7xl mx-auto space-y-6">
             <div>
-              <h1 className="text-2xl font-bold text-white tracking-tight">Canales y Conexiones Sociales</h1>
+              <h1 className="text-2xl font-bold text-white tracking-tight">Configuración & Canales Sociales</h1>
               <p className="text-sm text-slate-400 mt-1">
                 Administrá la integración con Socialit, la vinculación a marcas y la orquestación directa con n8n.
               </p>
@@ -126,14 +131,6 @@ export default function App() {
               />
             )}
           </div>
-        );
-      case 'analytics':
-        return (
-          <PlaceholderPage
-            title="Módulo de Analytics (WF05 / WF06)"
-            description="Recopilación de interacciones y análisis de aprendizaje continuo desde las redes sociales."
-            icon={BarChart3}
-          />
         );
       case 'contenidos':
       default:
@@ -155,13 +152,12 @@ export default function App() {
         user={user}
         onSignOut={signOut}
         title={
-          currentTab === 'campaigns' ? 'Campañas' :
-          currentTab === 'contenidos' ? 'Contenidos' :
+          currentTab === 'dashboard' ? 'Inicio' :
           currentTab === 'ideas' ? 'Ideas' :
-          currentTab === 'social_connections' ? 'Canales y Redes Sociales' :
-          currentTab === 'calendario' ? 'Calendario' :
-          currentTab === 'dashboard' ? 'Dashboard' :
-          'Analytics'
+          currentTab === 'contenidos' ? 'Contenidos' :
+          currentTab === 'campaigns' ? 'Campañas' :
+          currentTab === 'assets' ? 'Biblioteca Media' :
+          'Configuración'
         }
         workspaceName={currentWorkspace?.name}
         brandName={currentBrand?.name}

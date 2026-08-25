@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ContentFilterBar } from '../components/content/ContentFilterBar';
 import { ContentGrid } from '../components/content/ContentGrid';
-import { ContentDetailView } from '../components/content/ContentDetailView';
+import { ContentWorkspace } from '../components/studio/ContentWorkspace';
 import { AssignToCampaignModal } from '../components/campaigns/AssignToCampaignModal';
 import { useContentItems } from '../hooks/useContentItems';
 import { ContentItem, ContentStatus, SocialPlatform } from '../types/contentItem';
@@ -16,7 +16,7 @@ interface ContenidosPageProps {
 }
 
 export function ContenidosPage({ workspaceId, brandId, onContentMutated }: ContenidosPageProps) {
-  const [selectedContentId, setSelectedContentId] = useState<string | null>(null);
+  const [selectedContentItem, setSelectedContentItem] = useState<ContentItem | null>(null);
   const [contentToAssignCampaign, setContentToAssignCampaign] = useState<ContentItem | null>(null);
   const [statusFilter, setStatusFilter] = useState<ContentStatus | 'all'>('all');
   const [platformFilter, setPlatformFilter] = useState<SocialPlatform | 'all'>('all');
@@ -38,15 +38,15 @@ export function ContenidosPage({ workspaceId, brandId, onContentMutated }: Conte
   };
 
   const handleReview = (item: ContentItem) => {
-    setSelectedContentId(item.id);
+    setSelectedContentItem(item);
   };
 
-  // Si hay un contenido seleccionado, renderizar la vista de detalle
-  if (selectedContentId) {
+  // Si hay un contenido seleccionado, renderizar el Content Workspace unificado
+  if (selectedContentItem) {
     return (
-      <ContentDetailView
-        contentId={selectedContentId}
-        onBack={() => setSelectedContentId(null)}
+      <ContentWorkspace
+        item={selectedContentItem}
+        onBack={() => setSelectedContentItem(null)}
         onContentUpdated={() => {
           refreshItems();
           onContentMutated?.();

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { PublicationPackage, PlatformAdaptation } from '../../types/platformAdaptation';
 import { 
   Heart, 
@@ -13,7 +13,8 @@ import {
   Globe,
   Film,
   Sparkles,
-  MoveVertical
+  MoveVertical,
+  Activity
 } from 'lucide-react';
 import { getB2CdnUrl } from '../../lib/b2Storage';
 
@@ -36,6 +37,7 @@ export function UnifiedSocialPreview({
 }: UnifiedSocialPreviewProps) {
   const [showSafeArea, setShowSafeArea] = useState<boolean>(false);
   const [isExpandedCaption, setIsExpandedCaption] = useState<boolean>(false);
+  const [cdnCacheStatus, setCdnCacheStatus] = useState<string>('DETECTING');
 
   const platform = pkg.platform || activeAdaptation?.platform || 'instagram';
   const format = pkg.format || activeAdaptation?.format || 'reel';
@@ -58,6 +60,35 @@ export function UnifiedSocialPreview({
   if (!mediaUrl || mediaUrl.includes('placehold.co')) {
     mediaUrl = 'https://placehold.co/1080x1920/1e1b4b/c084fc?text=Aura+Render';
   }
+
+  // 2b. Dynamic Cloudflare CDN Probe
+  useEffect(() => {
+    if (!mediaUrl || !mediaUrl.includes('cdnsocial.lsnethub.com')) {
+      setCdnCacheStatus('DIRECT');
+      return;
+    }
+
+    let isMounted = true;
+    fetch(mediaUrl, { method: 'HEAD' })
+      .then((res) => {
+        if (!isMounted) return;
+        const cfHeader = res.headers.get('cf-cache-status') || res.headers.get('CF-Cache-Status');
+        if (cfHeader) {
+          setCdnCacheStatus(cfHeader.toUpperCase());
+        } else if (res.ok) {
+          setCdnCacheStatus('READY');
+        } else {
+          setCdnCacheStatus('UNKNOWN');
+        }
+      })
+      .catch(() => {
+        if (isMounted) setCdnCacheStatus('UNKNOWN');
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [mediaUrl]);
 
   // 3. Determinar si el asset actual es un video
   const isVideo = Boolean(
@@ -347,16 +378,29 @@ export function UnifiedSocialPreview({
 
       {/* Package Metadata Footer */}
       <div className="p-3 rounded-2xl bg-dark-900 border border-dark-800/80 flex items-center justify-between text-[11px] text-slate-400 flex-wrap gap-2">
-        <span className="font-mono flex items-center gap-1">
+        <span className="font-mono flex items-center gap-1.5">
           {isVideo ? <Film className="w-3.5 h-3.5 text-emerald-400" /> : <Sparkles className="w-3.5 h-3.5 text-aura-400" />}
-          PKG: <strong className="text-slate-200">{pkg.package_id ? pkg.package_id.slice(0, 24) : 'pkg_draft'}...</strong>
+          <span className="text-slate-300 font-semibold">{format.toUpperCase()}</span>
+          <span className="text-slate-500">•</span>
+          <strong className="text-slate-300 font-mono">{pkg.media?.duration_seconds || 15}s</strong>
         </span>
-        <span className="font-mono">
-          Dim: <strong className="text-slate-200">{pkg.media?.width || 1080}x{pkg.media?.height || 1920} ({pkg.media?.aspect_ratio || '9:16'})</strong>
-        </span>
-        <span>
-          Duración: <strong className="text-slate-200">{pkg.media?.duration_seconds || 15}s</strong>
-        </span>
+
+        {/* Dynamic Cloudflare CDN Status Badge */}
+        <div className="flex items-center gap-1.5 font-mono text-[10px]">
+          <Activity className="w-3 h-3 text-sky-400" />
+          <span className="text-slate-400">CDN:</span>
+          <span
+            className={`px-1.5 py-0.5 rounded text-[9px] font-bold tracking-wider ${
+              cdnCacheStatus === 'HIT'
+                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                : cdnCacheStatus === 'MISS'
+                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                : 'bg-sky-500/20 text-sky-300 border border-sky-500/30'
+            }`}
+          >
+            {cdnCacheStatus}
+          </span>
+        </div>
       </div>
     </div>
   );
