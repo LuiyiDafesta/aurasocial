@@ -49,6 +49,7 @@ interface SocialConnectionsPanelProps {
   brandId: string;
   workspaceId: string;
   brandName?: string;
+  onAccountsChanged?: () => void;
 }
 
 interface PlatformConfig {
@@ -107,6 +108,7 @@ export function SocialConnectionsPanel({
   brandId,
   workspaceId,
   brandName = 'Mi Marca',
+  onAccountsChanged,
 }: SocialConnectionsPanelProps) {
   const { toast } = useToast();
   const [connections, setConnections] = useState<SocialConnection[]>([]);
@@ -156,6 +158,7 @@ export function SocialConnectionsPanel({
       });
       setConnections(bound);
       setUnassignedAccounts(unassigned);
+      onAccountsChanged?.();
     } catch (err) {
       console.error('Error al cargar conexiones:', err);
       // Fallback
@@ -166,7 +169,7 @@ export function SocialConnectionsPanel({
     } finally {
       setIsLoading(false);
     }
-  }, [brandId, workspaceId]);
+  }, [brandId, workspaceId, onAccountsChanged]);
 
   useEffect(() => {
     loadConnections();

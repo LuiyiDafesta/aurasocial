@@ -25,7 +25,7 @@ export async function getSocialAccounts(
 
   const { data: conns, error: connError } = await connQuery;
 
-  if (!connError && conns && conns.length > 0) {
+  if (!connError && conns) {
     return conns.map((c) => ({
       id: c.id,
       workspace_id: c.workspace_id,

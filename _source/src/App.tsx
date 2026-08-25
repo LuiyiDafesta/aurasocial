@@ -37,7 +37,8 @@ export default function App() {
 
   const { 
     accounts: socialAccounts, 
-    isLoading: isAccountsLoading 
+    isLoading: isAccountsLoading,
+    refreshAccounts: refreshSocialAccounts
   } = useSocialAccounts(currentWorkspace?.id, currentBrand?.id);
 
   const { 
@@ -128,6 +129,7 @@ export default function App() {
                 brandId={currentBrand?.id || ''}
                 workspaceId={currentWorkspace.id}
                 brandName={currentBrand?.name || 'Marca Activa'}
+                onAccountsChanged={refreshSocialAccounts}
               />
             )}
           </div>

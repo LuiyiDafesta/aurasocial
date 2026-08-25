@@ -26,7 +26,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 // Configuración de credenciales Server-to-Server
 $DEFAULT_N8N_KEY = 'aura_n8n_live_sec_99a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4';
 $SUPABASE_URL = getenv('VITE_SUPABASE_URL') ?: 'https://eeykrgnwfarrljkotvmw.supabase.co';
-$SUPABASE_SERVICE_ROLE = getenv('SUPABASE_SERVICE_ROLE_KEY') ?: '';
+$SUPABASE_ANON_KEY = getenv('VITE_SUPABASE_ANON_KEY') ?: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVleWtyZ253ZmFycmxqa290dm13Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcyMDgyNjIsImV4cCI6MjEwMjc4NDI2Mn0.WM7sgjhvR003fHUKIy_r3CJ5S8TaIBA_3179hLkxdRk';
+$SUPABASE_SERVICE_ROLE = getenv('SUPABASE_SERVICE_ROLE_KEY') ?: $SUPABASE_ANON_KEY;
+
+$supaHeaders = [
+    "apikey: {$SUPABASE_ANON_KEY}",
+    "Authorization: Bearer " . ($SUPABASE_SERVICE_ROLE ?: $SUPABASE_ANON_KEY),
+    "Content-Type: application/json",
+    "Accept: application/json"
+];
+
 $SOCIALIT_API_URL = getenv('SOCIALIT_API_URL') ?: 'https://api.socialit.com';
 
 // Configuración de Backblaze B2 S3 / Native API & Cloudflare CDN Alliance
