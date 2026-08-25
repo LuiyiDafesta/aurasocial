@@ -384,14 +384,22 @@ export async function deleteAsset(assetId: string): Promise<void> {
     throw new Error('No se encontró el asset a eliminar');
   }
 
-  // 2. Eliminar de Backblaze B2
+  // 2. Eliminar archivo físico de Backblaze B2 Storage
   try {
-    await deleteFromB2(asset.storage_path);
+    if (asset.storage_path) {
+      await deleteFromB2(asset.storage_path);
+    }
   } catch (storageError) {
     console.warn(`Aviso: Error al eliminar archivo de Backblaze B2 (${asset.storage_path}):`, storageError);
   }
 
-  // 3. Eliminar fila de content_assets
+  // 3. Desvincular de tablas que puedan tener Foreign Keys
+  await Promise.allSettled([
+    supabase.from('render_jobs').update({ output_asset_id: null }).eq('output_asset_id', assetId),
+    supabase.from('platform_adaptations').update({ asset_id: null }).eq('asset_id', assetId),
+  ]);
+
+  // 4. Eliminar fila de content_assets
   const { error: dbError } = await supabase
     .from('content_assets')
     .delete()
@@ -406,7 +414,7 @@ export async function deleteAsset(assetId: string): Promise<void> {
 /**
  * Elimina múltiples assets en lote (Bulk Delete) en cascada:
  * 1. Elimina todos los archivos físicos en Backblaze B2 Storage.
- * 2. Elimina todas las filas de la tabla content_assets en Supabase PostgreSQL.
+ * 2. Desvincula dependencias y elimina todas las filas de la tabla content_assets en Supabase PostgreSQL.
  */
 export async function deleteAssetsBulk(
   assetIds: string[]
@@ -442,7 +450,13 @@ export async function deleteAssetsBulk(
     })
   );
 
-  // 3. Eliminar todas las filas en PostgreSQL
+  // 3. Desvincular de tablas dependientes
+  await Promise.allSettled([
+    supabase.from('render_jobs').update({ output_asset_id: null }).in('output_asset_id', assetIds),
+    supabase.from('platform_adaptations').update({ asset_id: null }).in('asset_id', assetIds),
+  ]);
+
+  // 4. Eliminar todas las filas en PostgreSQL
   const { error: dbError } = await supabase
     .from('content_assets')
     .delete()
@@ -450,11 +464,11 @@ export async function deleteAssetsBulk(
 
   if (dbError) {
     console.error('Error al eliminar registros masivos en content_assets:', dbError);
-    throw new Error(`Error al eliminar registros en base de datos: ${dbError.message}`);
+    throw new Error(`Error al eliminar assets de base de datos: ${dbError.message}`);
   }
 
   return {
-    deletedCount: assets.length,
+    deletedCount: assetIds.length,
     errors,
   };
 }

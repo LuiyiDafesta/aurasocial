@@ -1,10 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { GenerationRun } from '../../types/generationRun';
 import { ContentIdea } from '../../types/contentIdea';
 import { IdeaCard } from './IdeaCard';
 import { Button } from '../common/Button';
+import { ConfirmDialog } from '../common/ConfirmDialog';
+import { deleteIdea, deleteIdeasBulk } from '../../services/ideasService';
 import { supabase } from '../../lib/supabase';
 import { formatInArgentina } from '../../lib/dateUtils';
+import { useToast } from '../../hooks/useToast';
 import { 
   ArrowLeft, 
   Sparkles, 
@@ -17,7 +20,10 @@ import {
   XCircle, 
   Clock, 
   Loader2,
-  Info
+  Info,
+  Trash2,
+  CheckSquare,
+  Square
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
@@ -40,6 +46,15 @@ export function GenerationWorkspace({
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Selección Masiva y Eliminación
+  const [selectedIdeaIds, setSelectedIdeaIds] = useState<string[]>([]);
+  const [ideaToDelete, setIdeaToDelete] = useState<ContentIdea | null>(null);
+  const [isBulkConfirmOpen, setIsBulkConfirmOpen] = useState<boolean>(false);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState<boolean>(false);
+
+  const { toast } = useToast();
+
   const ctx = generation.generation_context;
   const topic = ctx?.topic || 'Estrategia Abierta de Marca';
   const keywords = ctx?.keywords || [];
@@ -48,32 +63,83 @@ export function GenerationWorkspace({
   const hasWebResearch = ctx?.web_research ?? true;
 
   // Consulta determinística de ideas por generation_run_id
-  useEffect(() => {
-    async function loadGenerationIdeas() {
-      try {
-        setIsLoading(true);
-        setError(null);
+  const loadGenerationIdeas = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
 
-        const { data, error: queryErr } = await supabase
-          .from('content_ideas')
-          .select('*')
-          .eq('generation_run_id', generation.id)
-          .order('created_at', { ascending: true });
+      const { data, error: queryErr } = await supabase
+        .from('content_ideas')
+        .select('*')
+        .eq('generation_run_id', generation.id)
+        .order('created_at', { ascending: true });
 
-        if (queryErr) throw queryErr;
-        setIdeas((data as ContentIdea[]) || []);
-      } catch (err: any) {
-        console.error('Error al cargar ideas de la generación:', err);
-        setError(err.message || 'Error al cargar las ideas de esta generación');
-      } finally {
-        setIsLoading(false);
-      }
+      if (queryErr) throw queryErr;
+      setIdeas((data as ContentIdea[]) || []);
+    } catch (err: any) {
+      console.error('Error al cargar ideas de la generación:', err);
+      setError(err.message || 'Error al cargar las ideas de esta generación');
+    } finally {
+      setIsLoading(false);
     }
+  }, [generation.id]);
 
+  useEffect(() => {
     if (generation.id) {
       loadGenerationIdeas();
     }
-  }, [generation.id]);
+  }, [generation.id, loadGenerationIdeas]);
+
+  const handleToggleSelectIdea = (idea: ContentIdea) => {
+    setSelectedIdeaIds((prev) =>
+      prev.includes(idea.id)
+        ? prev.filter((id) => id !== idea.id)
+        : [...prev, idea.id]
+    );
+  };
+
+  const isAllCurrentPageSelected = ideas.length > 0 && ideas.every((i) => selectedIdeaIds.includes(i.id));
+
+  const handleToggleSelectAllIdeas = () => {
+    const pageIds = ideas.map((i) => i.id);
+    if (isAllCurrentPageSelected) {
+      setSelectedIdeaIds((prev) => prev.filter((id) => !pageIds.includes(id)));
+    } else {
+      setSelectedIdeaIds((prev) => Array.from(new Set([...prev, ...pageIds])));
+    }
+  };
+
+  const handleDeleteIdeaConfirm = async () => {
+    if (!ideaToDelete || isDeleting) return;
+    try {
+      setIsDeleting(true);
+      await deleteIdea(ideaToDelete.id);
+      toast(`Idea "${ideaToDelete.title}" eliminada correctamente`, { type: 'success' });
+      setIdeaToDelete(null);
+      setSelectedIdeaIds((prev) => prev.filter((id) => id !== ideaToDelete.id));
+      await loadGenerationIdeas();
+    } catch (err: any) {
+      toast('Error al eliminar idea', { type: 'error', description: err.message });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleBulkDeleteIdeasConfirm = async () => {
+    if (selectedIdeaIds.length === 0 || isBulkDeleting) return;
+    try {
+      setIsBulkDeleting(true);
+      const res = await deleteIdeasBulk(selectedIdeaIds);
+      toast(`Se eliminaron ${res.deletedCount} ideas de esta sesión correctamente`, { type: 'success' });
+      setSelectedIdeaIds([]);
+      setIsBulkConfirmOpen(false);
+      await loadGenerationIdeas();
+    } catch (err: any) {
+      toast('Error al eliminar ideas en lote', { type: 'error', description: err.message });
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
 
   const getFormatBadge = (fmt: string) => {
     switch (fmt?.toLowerCase()) {
@@ -221,15 +287,66 @@ export function GenerationWorkspace({
         )}
       </div>
 
+      {/* Bulk Action Floating Toolbar */}
+      {selectedIdeaIds.length > 0 && (
+        <div className="bg-dark-900/95 border border-aura-500/40 rounded-2xl p-4 shadow-2xl flex items-center justify-between gap-4 flex-wrap animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-xl bg-aura-500/15 border border-aura-500/30 flex items-center justify-center text-aura-400 font-bold text-xs">
+              {selectedIdeaIds.length}
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-white">
+                {selectedIdeaIds.length} {selectedIdeaIds.length === 1 ? 'idea seleccionada' : 'ideas seleccionadas'}
+              </h4>
+              <p className="text-xs text-slate-400">
+                Podés eliminarlas de esta sesión estratégica simultáneamente.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSelectedIdeaIds([])}
+              className="text-xs text-slate-400 hover:text-white"
+            >
+              Cancelar selección
+            </Button>
+
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={() => setIsBulkConfirmOpen(true)}
+              leftIcon={<Trash2 className="w-3.5 h-3.5" />}
+              className="text-xs bg-rose-600 hover:bg-rose-500 text-white font-semibold shadow-lg shadow-rose-950/30"
+            >
+              Eliminar seleccionadas ({selectedIdeaIds.length})
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Ideas Section Header */}
-      <div className="flex items-center justify-between pt-2">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-2">
         <h2 className="text-base font-bold text-white tracking-tight flex items-center gap-2">
           <Sparkles className="w-4 h-4 text-aura-400" />
           Ideas Generadas en Esta Sesión ({ideas.length})
         </h2>
-        <span className="text-xs text-slate-400 font-mono">
-          Vinculación determinística por generation_run_id
-        </span>
+
+        <div className="flex items-center gap-2">
+          {ideas.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleToggleSelectAllIdeas}
+              leftIcon={isAllCurrentPageSelected ? <CheckSquare className="w-3.5 h-3.5 text-aura-400" /> : <Square className="w-3.5 h-3.5" />}
+              className="text-xs h-9 bg-dark-900 border-dark-800 hover:bg-dark-800"
+            >
+              {isAllCurrentPageSelected ? 'Deseleccionar Todas' : 'Seleccionar Todas'}
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Loading state */}
@@ -254,6 +371,9 @@ export function GenerationWorkspace({
             <IdeaCard
               key={idea.id}
               idea={idea}
+              isSelected={selectedIdeaIds.includes(idea.id)}
+              onToggleSelect={handleToggleSelectIdea}
+              onDelete={(i) => setIdeaToDelete(i)}
               onProduceContent={onProduceContent}
             />
           ))}
@@ -271,6 +391,32 @@ export function GenerationWorkspace({
           </p>
         </div>
       )}
+
+      {/* Diálogo de Confirmación para Eliminación Individual de Idea */}
+      <ConfirmDialog
+        isOpen={!!ideaToDelete}
+        onClose={() => setIdeaToDelete(null)}
+        onConfirm={handleDeleteIdeaConfirm}
+        title={`¿Eliminar idea "${ideaToDelete?.title}"?`}
+        message="Esta acción eliminará de forma permanente la idea de esta sesión estratégica. No se puede deshacer."
+        confirmText={isDeleting ? 'Eliminando...' : 'Eliminar Idea'}
+        cancelText="Cancelar"
+        type="danger"
+        isLoading={isDeleting}
+      />
+
+      {/* Diálogo de Confirmación para Eliminación Masiva de Ideas */}
+      <ConfirmDialog
+        isOpen={isBulkConfirmOpen}
+        onClose={() => setIsBulkConfirmOpen(false)}
+        onConfirm={handleBulkDeleteIdeasConfirm}
+        title={`¿Eliminar ${selectedIdeaIds.length} ideas seleccionadas?`}
+        message={`Esta acción eliminará de forma permanente las ${selectedIdeaIds.length} ideas seleccionadas de esta sesión de generación. No se puede revertir.`}
+        confirmText={isBulkDeleting ? 'Eliminando en lote...' : `Eliminar ${selectedIdeaIds.length} Ideas`}
+        cancelText="Cancelar"
+        type="danger"
+        isLoading={isBulkDeleting}
+      />
     </div>
   );
 }

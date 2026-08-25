@@ -120,10 +120,16 @@ export async function getBrandIdeaPillars(workspaceId?: string | null, brandId?:
 }
 
 /**
- * Elimina una idea de contenido por su ID.
+ * Elimina una idea de contenido por su ID de forma segura.
  */
 export async function deleteIdea(ideaId: string): Promise<void> {
   if (!ideaId) throw new Error('ideaId es requerido');
+
+  // Desvincular referencias en content_items
+  await Promise.allSettled([
+    supabase.from('content_items').update({ origin_idea_id: null }).eq('origin_idea_id', ideaId),
+    supabase.from('content_items').update({ content_idea_id: null }).eq('content_idea_id', ideaId),
+  ]);
 
   const { error } = await supabase
     .from('content_ideas')
@@ -143,6 +149,12 @@ export async function deleteIdeasBulk(ideaIds: string[]): Promise<{ deletedCount
   if (!ideaIds || ideaIds.length === 0) {
     return { deletedCount: 0 };
   }
+
+  // Desvincular referencias en content_items en lote
+  await Promise.allSettled([
+    supabase.from('content_items').update({ origin_idea_id: null }).in('origin_idea_id', ideaIds),
+    supabase.from('content_items').update({ content_idea_id: null }).in('content_idea_id', ideaIds),
+  ]);
 
   const { error } = await supabase
     .from('content_ideas')

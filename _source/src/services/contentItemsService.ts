@@ -273,7 +273,16 @@ export async function deleteContentItem(id: string): Promise<void> {
     );
   }
 
-  // 2. Eliminar fila de content_items (cascada a versiones, adaptaciones, outbox y assets)
+  // 2. Limpiar tablas hijas dependientes en orden seguro (evita bloqueo por Foreign Keys RESTRICT/NO ACTION)
+  await Promise.allSettled([
+    supabase.from('publishing_outbox').delete().eq('content_item_id', id),
+    supabase.from('render_jobs').delete().eq('content_item_id', id),
+    supabase.from('platform_adaptations').delete().eq('content_item_id', id),
+    supabase.from('content_versions').delete().eq('content_item_id', id),
+    supabase.from('content_assets').delete().eq('content_item_id', id),
+  ]);
+
+  // 3. Eliminar fila principal de content_items
   const { error } = await supabase
     .from('content_items')
     .delete()
@@ -313,7 +322,16 @@ export async function deleteContentItemsBulk(ids: string[]): Promise<{ deletedCo
     );
   }
 
-  // 2. Eliminar registros de content_items
+  // 2. Limpiar tablas hijas dependientes en lote
+  await Promise.allSettled([
+    supabase.from('publishing_outbox').delete().in('content_item_id', ids),
+    supabase.from('render_jobs').delete().in('content_item_id', ids),
+    supabase.from('platform_adaptations').delete().in('content_item_id', ids),
+    supabase.from('content_versions').delete().in('content_item_id', ids),
+    supabase.from('content_assets').delete().in('content_item_id', ids),
+  ]);
+
+  // 3. Eliminar registros de content_items
   const { error } = await supabase
     .from('content_items')
     .delete()
