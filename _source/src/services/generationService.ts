@@ -202,4 +202,60 @@ export async function getWorkspaceGenerationRuns(
   };
 }
 
+/**
+ * Elimina una sesión de generación y sus ideas hijas asociadas.
+ */
+export async function deleteGenerationRun(runId: string): Promise<void> {
+  if (!runId) throw new Error('runId es requerido');
 
+  try {
+    const res = await fetch('/api/generation/runs/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: runId }),
+    });
+    const json = await res.json();
+    if (!json.success) {
+      throw new Error(json.error || 'Error al eliminar sesión de generación');
+    }
+  } catch (err: any) {
+    // Fallback directo a Supabase
+    await supabase.from('content_ideas').delete().eq('generation_run_id', runId);
+    const { error } = await supabase.from('generation_runs').delete().eq('id', runId);
+    if (error) {
+      console.error(`Error al eliminar generation_run (${runId}):`, error);
+      throw new Error(`Error al eliminar sesión de generación: ${error.message}`);
+    }
+  }
+}
+
+/**
+ * Elimina múltiples sesiones de generación en lote (Bulk Delete).
+ */
+export async function deleteGenerationRunsBulk(runIds: string[]): Promise<{ deletedCount: number }> {
+  if (!runIds || runIds.length === 0) {
+    return { deletedCount: 0 };
+  }
+
+  try {
+    const res = await fetch('/api/generation/runs/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: runIds }),
+    });
+    const json = await res.json();
+    if (json.success) {
+      return { deletedCount: json.deletedCount || runIds.length };
+    }
+    throw new Error(json.error || 'Error al eliminar sesiones de generación');
+  } catch (err: any) {
+    // Fallback directo a Supabase
+    await supabase.from('content_ideas').delete().in('generation_run_id', runIds);
+    const { error } = await supabase.from('generation_runs').delete().in('id', runIds);
+    if (error) {
+      console.error('Error al eliminar generation_runs en lote:', error);
+      throw new Error(`Error al eliminar sesiones de generación: ${error.message}`);
+    }
+    return { deletedCount: runIds.length };
+  }
+}

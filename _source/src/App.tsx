@@ -102,6 +102,7 @@ export default function App() {
               setIsBrandModalOpen(true);
             }}
             isSwitchingBrand={isSwitchingBrand}
+            onContentMutated={refreshStats}
           />
         );
       case 'assets':

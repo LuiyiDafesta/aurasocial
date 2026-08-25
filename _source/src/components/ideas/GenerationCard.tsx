@@ -9,17 +9,24 @@ import {
   CheckCircle2,
   XCircle,
   Clock,
-  Target
+  Target,
+  Trash2,
+  CheckSquare,
+  Square
 } from 'lucide-react';
 import { GenerationRun } from '../../types/generationRun';
 import { formatInArgentina } from '../../lib/dateUtils';
 import { Button } from '../common/Button';
+import { cn } from '../../lib/utils';
 
 interface GenerationCardProps {
   run: GenerationRun;
   indexNumber?: number;
   onOpenGeneration: (run: GenerationRun) => void;
   onViewContext: (run: GenerationRun) => void;
+  onDelete?: (run: GenerationRun) => void;
+  isSelected?: boolean;
+  onToggleSelect?: (run: GenerationRun) => void;
 }
 
 export function GenerationCard({
@@ -27,6 +34,9 @@ export function GenerationCard({
   indexNumber,
   onOpenGeneration,
   onViewContext,
+  onDelete,
+  isSelected = false,
+  onToggleSelect,
 }: GenerationCardProps) {
   const ctx = run.generation_context;
   const topic = ctx?.topic || 'Estrategia Abierta de Marca';
@@ -81,11 +91,35 @@ export function GenerationCard({
   };
 
   return (
-    <div className="bg-dark-900 border border-dark-800 rounded-3xl p-6 shadow-xl flex flex-col justify-between space-y-5 hover:border-aura-500/40 hover:bg-dark-900/90 transition-all group">
+    <div className={cn(
+      "bg-dark-900 border rounded-3xl p-6 shadow-xl flex flex-col justify-between space-y-5 transition-all group relative",
+      isSelected 
+        ? "border-aura-500 bg-dark-900/95 ring-1 ring-aura-500/50" 
+        : "border-dark-800 hover:border-aura-500/40 hover:bg-dark-900/90"
+    )}>
       {/* Top Meta Bar */}
       <div className="space-y-3.5">
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-2">
+            {onToggleSelect && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleSelect(run);
+                }}
+                className={cn(
+                  "w-6 h-6 rounded-lg flex items-center justify-center transition-colors mr-1",
+                  isSelected
+                    ? "text-aura-400 bg-aura-500/20 border border-aura-500/40"
+                    : "text-slate-500 hover:text-slate-300 bg-dark-950 border border-dark-800"
+                )}
+                title={isSelected ? "Deseleccionar sesión" : "Seleccionar sesión"}
+              >
+                {isSelected ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
+              </button>
+            )}
+
             <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-500/20 to-aura-500/20 border border-amber-500/30 text-amber-300 flex items-center justify-center font-bold text-xs">
               <Sparkles className="w-4 h-4" />
             </div>
@@ -97,10 +131,26 @@ export function GenerationCard({
             {getStatusBadge(run.status)}
           </div>
 
-          <span className="text-[11px] text-slate-400 font-mono flex items-center gap-1">
-            <Calendar className="w-3 h-3 text-slate-400" />
-            {formatInArgentina(run.created_at)}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-slate-400 font-mono flex items-center gap-1">
+              <Calendar className="w-3 h-3 text-slate-400" />
+              {formatInArgentina(run.created_at)}
+            </span>
+
+            {onDelete && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete(run);
+                }}
+                className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors ml-1"
+                title="Eliminar sesión de generación e ideas asociadas"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Topic Title */}

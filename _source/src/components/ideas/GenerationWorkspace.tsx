@@ -33,6 +33,7 @@ interface GenerationWorkspaceProps {
   onBack: () => void;
   onViewContext: (generation: GenerationRun) => void;
   onProduceContent?: (idea: ContentIdea) => void;
+  onDeleteGeneration?: (generation: GenerationRun) => void;
 }
 
 export function GenerationWorkspace({
@@ -41,6 +42,7 @@ export function GenerationWorkspace({
   onBack,
   onViewContext,
   onProduceContent,
+  onDeleteGeneration,
 }: GenerationWorkspaceProps) {
   const [ideas, setIdeas] = useState<ContentIdea[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -181,7 +183,7 @@ export function GenerationWorkspace({
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
       {/* Top Back Navigation Bar */}
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex items-center justify-between gap-4 flex-wrap">
         <Button
           variant="outline"
           size="sm"
@@ -192,15 +194,29 @@ export function GenerationWorkspace({
           Volver a Generaciones
         </Button>
 
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => onViewContext(generation)}
-          leftIcon={<Info className="w-3.5 h-3.5" />}
-          className="text-xs"
-        >
-          Ver Contexto Completo y Fuentes
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onViewContext(generation)}
+            leftIcon={<Info className="w-3.5 h-3.5" />}
+            className="text-xs"
+          >
+            Ver Contexto Completo y Fuentes
+          </Button>
+
+          {onDeleteGeneration && (
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={() => onDeleteGeneration(generation)}
+              leftIcon={<Trash2 className="w-3.5 h-3.5" />}
+              className="text-xs bg-rose-600/80 hover:bg-rose-500 text-white font-semibold"
+            >
+              Eliminar Sesión
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Generation Strategic Header Container */}

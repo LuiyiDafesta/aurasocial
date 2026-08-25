@@ -16,7 +16,7 @@ export function useContentStats(workspaceId?: string | null, brandId?: string | 
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   const fetchStats = useCallback(async () => {
-    if (!workspaceId) {
+    if (!workspaceId || !brandId) {
       setStats(initialCounts);
       setIsLoading(false);
       return;
@@ -24,7 +24,7 @@ export function useContentStats(workspaceId?: string | null, brandId?: string | 
 
     try {
       setIsLoading(true);
-      const data = await getAggregatedStatusCounts(workspaceId, brandId || undefined);
+      const data = await getAggregatedStatusCounts(workspaceId, brandId);
       setStats(data);
     } catch (err) {
       console.error('Error al cargar estadísticas de contenido:', err);

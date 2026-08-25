@@ -467,6 +467,8 @@ $isSpaClientRequest = (strpos($path, 'content/') === 0)
     || (strpos($path, 'campaigns/') === 0) 
     || (strpos($path, 'campaign/') === 0) 
     || (strpos($path, 'assets/') === 0) 
+    || (strpos($path, 'generation/') === 0) 
+    || (strpos($path, 'generations/') === 0) 
     || (strpos($path, 'social/connections/') === 0) 
     || (strpos($path, 'storage/') === 0);
 
@@ -1214,6 +1216,51 @@ if ($method === 'POST' && in_array($path, ['assets/delete', 'content/assets/dele
 
     // Eliminar fila de content_assets
     $delUrl = "{$SUPABASE_URL}/rest/v1/content_assets?id=in.({$idList})";
+    $delRes = makeRequest($delUrl, 'DELETE', array_merge($supaHeaders, ["Prefer: return=representation"]));
+
+    $deletedRows = is_array($delRes['body']) ? $delRes['body'] : [];
+    echo json_encode([
+        'success' => true,
+        'deletedCount' => count($deletedRows) > 0 ? count($deletedRows) : count($ids),
+        'deletedIds' => $ids
+    ]);
+    exit;
+}
+
+// 5. Eliminación de Sesiones de Generación (Cascada en ideas hijas y runs)
+if ($method === 'POST' && in_array($path, ['generation/runs/delete', 'generation/delete', 'generations/delete', 'generations/runs/delete'])) {
+    $rawIds = $body['ids'] ?? ($body['runIds'] ?? ($body['id'] ?? ($body['runId'] ?? [])));
+    $ids = is_array($rawIds) ? $rawIds : (!empty($rawIds) ? [$rawIds] : []);
+
+    if (empty($ids)) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'error' => 'BAD_REQUEST: Se requiere al menos un ID de sesión de generación']);
+        exit;
+    }
+
+    $idList = implode(',', array_map('trim', $ids));
+
+    // 1. Obtener IDs de ideas hijas asociadas a estos runs
+    $ideasUrl = "{$SUPABASE_URL}/rest/v1/content_ideas?generation_run_id=in.({$idList})&select=id";
+    $ideasRes = makeRequest($ideasUrl, 'GET', $supaHeaders);
+    $ideas = is_array($ideasRes['body']) ? $ideasRes['body'] : [];
+    $ideaIds = array_map(function($i) { return $i['id']; }, $ideas);
+
+    if (!empty($ideaIds)) {
+        $ideaIdList = implode(',', array_map('trim', $ideaIds));
+        // Desvincular referencias en content_items
+        $patchUrl = "{$SUPABASE_URL}/rest/v1/content_items?or=(origin_idea_id.in.({$ideaIdList}),content_idea_id.in.({$ideaIdList}),idea_id.in.({$ideaIdList}))";
+        makeRequest($patchUrl, 'PATCH', $supaHeaders, ['origin_idea_id' => null, 'content_idea_id' => null, 'idea_id' => null]);
+
+        // Eliminar ideas hijas asociadas
+        makeRequest("{$SUPABASE_URL}/rest/v1/content_ideas?generation_run_id=in.({$idList})", 'DELETE', $supaHeaders);
+    }
+
+    // 2. Desvincular referencias en content_items si tienen generation_run_id
+    makeRequest("{$SUPABASE_URL}/rest/v1/content_items?generation_run_id=in.({$idList})", 'PATCH', $supaHeaders, ['generation_run_id' => null]);
+
+    // 3. Eliminar filas de generation_runs
+    $delUrl = "{$SUPABASE_URL}/rest/v1/generation_runs?id=in.({$idList})";
     $delRes = makeRequest($delUrl, 'DELETE', array_merge($supaHeaders, ["Prefer: return=representation"]));
 
     $deletedRows = is_array($delRes['body']) ? $delRes['body'] : [];

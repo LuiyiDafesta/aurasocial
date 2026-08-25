@@ -15,6 +15,7 @@ import { AssignToCampaignModal } from '../components/campaigns/AssignToCampaignM
 import { IdeaPriority, ContentIdea, IdeaSortBy } from '../types/contentIdea';
 import { GenerationContext, GenerationRun } from '../types/generationRun';
 import { getBrandIdeaPillars, deleteIdea, deleteIdeasBulk } from '../services/ideasService';
+import { deleteGenerationRun, deleteGenerationRunsBulk } from '../services/generationService';
 import { Button } from '../components/common/Button';
 import { Input } from '../components/common/Input';
 import { ConfirmDialog } from '../components/common/ConfirmDialog';
@@ -43,6 +44,7 @@ interface IdeasPageProps {
   onRefreshBrands?: () => void;
   onEditBrand?: (brand: Brand) => void;
   isSwitchingBrand?: boolean;
+  onContentMutated?: () => void;
 }
 
 type MainTab = 'generations' | 'ideas';
@@ -51,6 +53,7 @@ export function IdeasPage({
   workspaceId, 
   currentBrand, 
   onEditBrand,
+  onContentMutated,
 }: IdeasPageProps) {
   // Navigation: Primary view is 'generations'
   const [activeTab, setActiveTab] = useState<MainTab>('generations');
@@ -72,12 +75,19 @@ export function IdeasPage({
   const [ideasPage, setIdeasPage] = useState<number>(1);
   const [runsPage, setRunsPage] = useState<number>(1);
 
-  // Selección Masiva y Eliminación
+  // Selección Masiva y Eliminación de Ideas
   const [selectedIdeaIds, setSelectedIdeaIds] = useState<string[]>([]);
   const [ideaToDelete, setIdeaToDelete] = useState<ContentIdea | null>(null);
   const [isBulkConfirmOpen, setIsBulkConfirmOpen] = useState<boolean>(false);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
   const [isBulkDeleting, setIsBulkDeleting] = useState<boolean>(false);
+
+  // Selección Masiva y Eliminación de Sesiones de Generación (Runs)
+  const [selectedRunIds, setSelectedRunIds] = useState<string[]>([]);
+  const [runToDelete, setRunToDelete] = useState<GenerationRun | null>(null);
+  const [isBulkRunsConfirmOpen, setIsBulkRunsConfirmOpen] = useState<boolean>(false);
+  const [isDeletingRun, setIsDeletingRun] = useState<boolean>(false);
+  const [isBulkDeletingRuns, setIsBulkDeletingRuns] = useState<boolean>(false);
 
   // Modales & Inspection
   const [isGenerateModalOpen, setIsGenerateModalOpen] = useState<boolean>(false);
@@ -93,6 +103,7 @@ export function IdeasPage({
   useEffect(() => {
     setActiveWorkspaceGeneration(null);
     setSelectedIdeaIds([]);
+    setSelectedRunIds([]);
     setIdeasPage(1);
     setRunsPage(1);
   }, [brandId]);
@@ -259,10 +270,73 @@ export function IdeasPage({
       setSelectedIdeaIds([]);
       setIsBulkConfirmOpen(false);
       refreshIdeas();
+      onContentMutated?.();
     } catch (err: any) {
       toast('Error al eliminar ideas en lote', { type: 'error', description: err.message });
     } finally {
       setIsBulkDeleting(false);
+    }
+  };
+
+  // Handlers para Selección Múltiple y Eliminación de Sesiones de Generación (Runs)
+  const handleToggleSelectRun = (run: GenerationRun) => {
+    setSelectedRunIds((prev) =>
+      prev.includes(run.id)
+        ? prev.filter((id) => id !== run.id)
+        : [...prev, run.id]
+    );
+  };
+
+  const isAllCurrentPageRunsSelected = filteredRuns.length > 0 && filteredRuns.every((r) => selectedRunIds.includes(r.id));
+
+  const handleToggleSelectAllRuns = () => {
+    const pageIds = filteredRuns.map((r) => r.id);
+    if (isAllCurrentPageRunsSelected) {
+      setSelectedRunIds((prev) => prev.filter((id) => !pageIds.includes(id)));
+    } else {
+      setSelectedRunIds((prev) => Array.from(new Set([...prev, ...pageIds])));
+    }
+  };
+
+  const handleDeleteRunConfirm = async () => {
+    if (!runToDelete || isDeletingRun) return;
+    try {
+      setIsDeletingRun(true);
+      await deleteGenerationRun(runToDelete.id);
+      toast('Sesión de generación eliminada correctamente', { type: 'success' });
+      if (activeWorkspaceGeneration?.id === runToDelete.id) {
+        setActiveWorkspaceGeneration(null);
+      }
+      setSelectedRunIds((prev) => prev.filter((id) => id !== runToDelete.id));
+      setRunToDelete(null);
+      refreshRuns();
+      refreshIdeas();
+      onContentMutated?.();
+    } catch (err: any) {
+      toast('Error al eliminar sesión de generación', { type: 'error', description: err.message });
+    } finally {
+      setIsDeletingRun(false);
+    }
+  };
+
+  const handleBulkDeleteRunsConfirm = async () => {
+    if (selectedRunIds.length === 0 || isBulkDeletingRuns) return;
+    try {
+      setIsBulkDeletingRuns(true);
+      const res = await deleteGenerationRunsBulk(selectedRunIds);
+      toast(`Se eliminaron ${res.deletedCount} sesiones de generación correctamente`, { type: 'success' });
+      if (activeWorkspaceGeneration && selectedRunIds.includes(activeWorkspaceGeneration.id)) {
+        setActiveWorkspaceGeneration(null);
+      }
+      setSelectedRunIds([]);
+      setIsBulkRunsConfirmOpen(false);
+      refreshRuns();
+      refreshIdeas();
+      onContentMutated?.();
+    } catch (err: any) {
+      toast('Error al eliminar sesiones en lote', { type: 'error', description: err.message });
+    } finally {
+      setIsBulkDeletingRuns(false);
     }
   };
 
@@ -340,6 +414,7 @@ export function IdeasPage({
           onBack={() => setActiveWorkspaceGeneration(null)}
           onViewContext={(r) => setInspectedRun(r)}
           onProduceContent={handleProduceContent}
+          onDeleteGeneration={(r) => setRunToDelete(r)}
         />
       ) : (
         /* ========================================================================= */
@@ -388,6 +463,46 @@ export function IdeasPage({
           {/* ========================================================================= */}
           {activeTab === 'generations' && (
             <div className="space-y-6">
+              {/* Bulk Action Floating Toolbar for Generations */}
+              {selectedRunIds.length > 0 && (
+                <div className="bg-dark-900/95 border border-aura-500/40 rounded-2xl p-4 shadow-2xl flex items-center justify-between gap-4 flex-wrap animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-aura-500/15 border border-aura-500/30 flex items-center justify-center text-aura-400 font-bold text-xs">
+                      {selectedRunIds.length}
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-white">
+                        {selectedRunIds.length} {selectedRunIds.length === 1 ? 'sesión seleccionada' : 'sesiones seleccionadas'}
+                      </h4>
+                      <p className="text-xs text-slate-400">
+                        Podés eliminarlas junto a sus ideas generadas no guardadas.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSelectedRunIds([])}
+                      className="text-xs text-slate-400 hover:text-white"
+                    >
+                      Cancelar selección
+                    </Button>
+
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      onClick={() => setIsBulkRunsConfirmOpen(true)}
+                      leftIcon={<Trash2 className="w-3.5 h-3.5" />}
+                      className="text-xs bg-rose-600 hover:bg-rose-500 text-white font-semibold shadow-lg shadow-rose-950/30"
+                    >
+                      Eliminar {selectedRunIds.length} Sesiones
+                    </Button>
+                  </div>
+                </div>
+              )}
+
               {/* Generations Filter Bar */}
               <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-dark-900/60 p-3.5 rounded-2xl border border-dark-800">
                 <div className="relative flex-1 w-full">
@@ -402,6 +517,18 @@ export function IdeasPage({
                 </div>
 
                 <div className="flex items-center gap-2 w-full sm:w-auto">
+                  {filteredRuns.length > 0 && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleToggleSelectAllRuns}
+                      leftIcon={isAllCurrentPageRunsSelected ? <CheckSquare className="w-3.5 h-3.5 text-aura-400" /> : <Square className="w-3.5 h-3.5 text-slate-400" />}
+                      className="text-xs shrink-0"
+                    >
+                      {isAllCurrentPageRunsSelected ? 'Deseleccionar Todo' : 'Seleccionar Todo'}
+                    </Button>
+                  )}
+
                   <select
                     value={genFormatFilter}
                     onChange={(e) => setGenFormatFilter(e.target.value)}
@@ -435,6 +562,9 @@ export function IdeasPage({
                         indexNumber={totalRunsCount - ((runsPage - 1) * 12 + idx)}
                         onOpenGeneration={handleOpenGenerationWorkspace}
                         onViewContext={(r) => setInspectedRun(r)}
+                        onDelete={(r) => setRunToDelete(r)}
+                        isSelected={selectedRunIds.includes(run.id)}
+                        onToggleSelect={handleToggleSelectRun}
                       />
                     ))}
                   </div>
@@ -765,6 +895,32 @@ export function IdeasPage({
         cancelText="Cancelar"
         type="danger"
         isLoading={isBulkDeleting}
+      />
+
+      {/* Diálogo de Confirmación para Eliminación Individual de Sesión de Generación */}
+      <ConfirmDialog
+        isOpen={!!runToDelete}
+        onClose={() => setRunToDelete(null)}
+        onConfirm={handleDeleteRunConfirm}
+        title={`¿Eliminar sesión de generación "${runToDelete?.generation_context?.topic || 'Estrategia'}"?`}
+        message="Esta acción eliminará de forma permanente la sesión de generación y todas las ideas asociadas que no hayan sido promovidas a contenidos. No se puede deshacer."
+        confirmText={isDeletingRun ? 'Eliminando...' : 'Eliminar Sesión'}
+        cancelText="Cancelar"
+        type="danger"
+        isLoading={isDeletingRun}
+      />
+
+      {/* Diálogo de Confirmación para Eliminación Masiva de Sesiones de Generación */}
+      <ConfirmDialog
+        isOpen={isBulkRunsConfirmOpen}
+        onClose={() => setIsBulkRunsConfirmOpen(false)}
+        onConfirm={handleBulkDeleteRunsConfirm}
+        title={`¿Eliminar ${selectedRunIds.length} sesiones de generación seleccionadas?`}
+        message={`Esta acción eliminará de forma permanente las ${selectedRunIds.length} sesiones de generación y sus ideas hijas no guardadas. No se puede revertir.`}
+        confirmText={isBulkDeletingRuns ? 'Eliminando en lote...' : `Eliminar ${selectedRunIds.length} Sesiones`}
+        cancelText="Cancelar"
+        type="danger"
+        isLoading={isBulkDeletingRuns}
       />
     </div>
   );
