@@ -37,38 +37,42 @@ function TrimmedVideoPlayer({
   className = 'w-full h-full object-cover',
 }: TrimmedVideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const [isReady, setIsReady] = useState<boolean>(false);
 
-  // Al cargar metadata del video, posicionar en startSeconds y reproducir
+  // Al cargar metadata del video, posicionar inmediatamente en startSeconds
   const handleLoadedMetadata = () => {
     const video = videoRef.current;
     if (!video) return;
-    if (startSeconds > 0) {
-      video.currentTime = startSeconds;
-    }
-    video.play().catch(() => {});
+    video.currentTime = startSeconds;
   };
 
-  // Monitorear timeupdate para mantener la reproducción estrictamente dentro del rango [startSeconds, endSeconds]
+  const handleSeeked = () => {
+    setIsReady(true);
+    const video = videoRef.current;
+    if (video) {
+      video.play().catch(() => {});
+    }
+  };
+
+  // Monitorear timeupdate para mantener la reproducción estrictamente en el fragmento [startSeconds, endSeconds]
   const handleTimeUpdate = () => {
     const video = videoRef.current;
     if (!video) return;
 
-    // Si llegó o superó el final del fragmento, o está antes del inicio
-    if (video.currentTime >= endSeconds - 0.05 || video.currentTime < startSeconds - 0.2) {
+    // Si alcanzó o superó el fin del fragmento, o si está antes del inicio
+    if (video.currentTime >= endSeconds - 0.05 || video.currentTime < startSeconds - 0.1) {
       video.currentTime = startSeconds;
       video.play().catch(() => {});
     }
   };
 
-  // Reaccionar instantáneamente cuando startSeconds o endSeconds cambien en vivo desde el panel
+  // Reaccionar instantáneamente a cambios de rango
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
 
-    if (video.currentTime < startSeconds || video.currentTime >= endSeconds) {
-      video.currentTime = startSeconds;
-      video.play().catch(() => {});
-    }
+    video.currentTime = startSeconds;
+    video.play().catch(() => {});
   }, [startSeconds, endSeconds, mediaUrl]);
 
   useEffect(() => {
@@ -80,13 +84,15 @@ function TrimmedVideoPlayer({
   return (
     <video
       ref={videoRef}
+      key={`${mediaUrl}_${startSeconds}_${endSeconds}`}
       src={mediaUrl}
       onLoadedMetadata={handleLoadedMetadata}
+      onSeeked={handleSeeked}
       onTimeUpdate={handleTimeUpdate}
       autoPlay
       muted={isMuted}
       playsInline
-      className={className}
+      className={`${className} transition-opacity duration-150 ${isReady ? 'opacity-100' : 'opacity-90'}`}
     />
   );
 }
