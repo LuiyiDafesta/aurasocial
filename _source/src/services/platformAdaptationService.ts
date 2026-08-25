@@ -662,7 +662,7 @@ function ensureSceneId(scene: Partial<SceneMediaPlan>, index: number): string {
   if (scene.scene_id && typeof scene.scene_id === 'string' && scene.scene_id.trim()) {
     return scene.scene_id;
   }
-  return `sc_${index + 1}_${Math.random().toString(36).substring(2, 9)}`;
+  return `sc_${scene.scene_number || index + 1}`;
 }
 
 /**
@@ -687,7 +687,7 @@ export async function updateAdaptationSceneAsset(
   const isVideo = asset.asset_type === 'video' || asset.mime_type?.startsWith('video');
   const rawAssetDuration = typeof asset.duration_seconds === 'number' && asset.duration_seconds > 0
     ? asset.duration_seconds
-    : null;
+    : (typeof asset.metadata?.duration_seconds === 'number' ? asset.metadata.duration_seconds : null);
 
   const updatedScenes = adaptation.scene_mappings.map((s, idx) => {
     const isMatch = typeof sceneNumberOrId === 'string'
@@ -695,7 +695,7 @@ export async function updateAdaptationSceneAsset(
       : s.scene_number === sceneNumberOrId;
 
     if (isMatch) {
-      let newSceneDuration = s.duration_seconds;
+      let newSceneDuration = s.duration_seconds || 5;
       let startSec: number | null = null;
       let endSec: number | null = null;
 
@@ -703,7 +703,10 @@ export async function updateAdaptationSceneAsset(
         if (rawAssetDuration !== null) {
           startSec = 0;
           endSec = rawAssetDuration;
-          newSceneDuration = Math.round(rawAssetDuration);
+          newSceneDuration = Math.max(1, Math.round(rawAssetDuration));
+        } else {
+          startSec = 0;
+          endSec = newSceneDuration;
         }
       }
 

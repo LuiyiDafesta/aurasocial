@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
-import { PublicationPackage, PlatformAdaptation } from '../../types/platformAdaptation';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { PublicationPackage, PlatformAdaptation, SceneMediaPlan } from '../../types/platformAdaptation';
 import { 
   Heart, 
   MessageCircle, 
@@ -12,68 +12,140 @@ import {
   ThumbsUp, 
   Globe,
   Film,
-  Sparkles,
   MoveVertical,
   Activity,
-  Scissors,
   Volume2,
-  VolumeX
+  VolumeX,
+  Play
 } from 'lucide-react';
 import { getB2CdnUrl } from '../../lib/b2Storage';
 
-interface TrimmedVideoPlayerProps {
-  mediaUrl: string;
-  startSeconds: number;
-  endSeconds: number;
-  isMuted?: boolean;
+interface SequenceVideoPlayerProps {
+  scenes: SceneMediaPlan[];
+  mode: 'single' | 'full';
+  selectedSceneNumber: number;
+  isMuted: boolean;
+  onActiveSceneChange?: (sceneNumber: number) => void;
   className?: string;
 }
 
-function TrimmedVideoPlayer({
-  mediaUrl,
-  startSeconds,
-  endSeconds,
+function SequenceVideoPlayer({
+  scenes,
+  mode,
+  selectedSceneNumber,
   isMuted = true,
+  onActiveSceneChange,
   className = 'w-full h-full object-cover',
-}: TrimmedVideoPlayerProps) {
+}: SequenceVideoPlayerProps) {
+  const [playingIndex, setPlayingIndex] = useState<number>(0);
+  const [isPlaying] = useState<boolean>(true);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [isReady, setIsReady] = useState<boolean>(false);
 
-  // Al cargar metadata del video, posicionar inmediatamente en startSeconds
+  // Determinar la escena actual según el modo
+  const activeSceneIndex = useMemo(() => {
+    if (mode === 'single') {
+      const idx = scenes.findIndex((s) => s.scene_number === selectedSceneNumber);
+      return idx >= 0 ? idx : 0;
+    }
+    return playingIndex >= 0 && playingIndex < scenes.length ? playingIndex : 0;
+  }, [mode, selectedSceneNumber, playingIndex, scenes]);
+
+  const currentScene = scenes[activeSceneIndex] || scenes[0];
+
+  // Determinar URL del asset
+  let currentMediaUrl = currentScene?.asset_url;
+  if (!currentMediaUrl && currentScene?.storage_path) {
+    currentMediaUrl = getB2CdnUrl(currentScene.storage_path);
+  }
+  if (!currentMediaUrl || currentMediaUrl.includes('placehold.co')) {
+    currentMediaUrl = 'https://placehold.co/1080x1920/1e1b4b/c084fc?text=Aura+Render';
+  }
+
+  const isCurrentVideo = Boolean(
+    (currentScene?.mime_type && currentScene.mime_type.startsWith('video/')) ||
+    currentScene?.asset_type === 'video' ||
+    (currentMediaUrl && (currentMediaUrl.includes('.mp4') || currentMediaUrl.includes('.mov') || currentMediaUrl.includes('.webm')))
+  );
+
+  const startSec = typeof currentScene?.source_start_seconds === 'number' && currentScene.source_start_seconds >= 0
+    ? currentScene.source_start_seconds
+    : 0;
+
+  const endSec = typeof currentScene?.source_end_seconds === 'number' && currentScene.source_end_seconds > startSec
+    ? currentScene.source_end_seconds
+    : (startSec + (currentScene?.duration_seconds || 5));
+
+  // Sincronizar active scene con el padre
+  useEffect(() => {
+    if (currentScene && onActiveSceneChange) {
+      onActiveSceneChange(currentScene.scene_number);
+    }
+  }, [currentScene?.scene_number, onActiveSceneChange]);
+
+  // Si cambia de modo single a full o cambia selectedSceneNumber en modo single
+  useEffect(() => {
+    if (mode === 'single') {
+      const idx = scenes.findIndex((s) => s.scene_number === selectedSceneNumber);
+      if (idx >= 0) setPlayingIndex(idx);
+    }
+  }, [mode, selectedSceneNumber, scenes]);
+
+  // Manejo de imágenes en modo Full Video (timer de transición automática)
+  useEffect(() => {
+    if (mode === 'full' && !isCurrentVideo && isPlaying) {
+      const durMs = (currentScene?.duration_seconds || 5) * 1000;
+      const timer = setTimeout(() => {
+        setPlayingIndex((prev) => (prev + 1) % scenes.length);
+      }, durMs);
+
+      return () => clearTimeout(timer);
+    }
+  }, [mode, isCurrentVideo, isPlaying, currentScene?.duration_seconds, scenes.length]);
+
+  // Manejo de video
   const handleLoadedMetadata = () => {
     const video = videoRef.current;
     if (!video) return;
-    video.currentTime = startSeconds;
-  };
-
-  const handleSeeked = () => {
-    setIsReady(true);
-    const video = videoRef.current;
-    if (video) {
+    video.currentTime = startSec;
+    if (isPlaying) {
       video.play().catch(() => {});
     }
   };
 
-  // Monitorear timeupdate para mantener la reproducción estrictamente en el fragmento [startSeconds, endSeconds]
+  const handleSeeked = () => {
+    const video = videoRef.current;
+    if (video && isPlaying) {
+      video.play().catch(() => {});
+    }
+  };
+
   const handleTimeUpdate = () => {
     const video = videoRef.current;
     if (!video) return;
 
-    // Si alcanzó o superó el fin del fragmento, o si está antes del inicio
-    if (video.currentTime >= endSeconds - 0.05 || video.currentTime < startSeconds - 0.1) {
-      video.currentTime = startSeconds;
-      video.play().catch(() => {});
+    const currentPos = video.currentTime;
+
+    // Si alcanzó el final del fragmento recortado
+    if (currentPos >= endSec - 0.05 || currentPos < startSec - 0.1) {
+      if (mode === 'full' && scenes.length > 1) {
+        // Pasar a la siguiente escena
+        setPlayingIndex((prev) => (prev + 1) % scenes.length);
+      } else {
+        // Loopear la misma escena
+        video.currentTime = startSec;
+        if (isPlaying) video.play().catch(() => {});
+      }
     }
   };
 
-  // Reaccionar instantáneamente a cambios de rango
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
-
-    video.currentTime = startSeconds;
-    video.play().catch(() => {});
-  }, [startSeconds, endSeconds, mediaUrl]);
+    video.currentTime = startSec;
+    if (isPlaying) {
+      video.play().catch(() => {});
+    }
+  }, [startSec, endSec, currentMediaUrl]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -82,18 +154,29 @@ function TrimmedVideoPlayer({
   }, [isMuted]);
 
   return (
-    <video
-      ref={videoRef}
-      key={`${mediaUrl}_${startSeconds}_${endSeconds}`}
-      src={mediaUrl}
-      onLoadedMetadata={handleLoadedMetadata}
-      onSeeked={handleSeeked}
-      onTimeUpdate={handleTimeUpdate}
-      autoPlay
-      muted={isMuted}
-      playsInline
-      className={`${className} transition-opacity duration-150 ${isReady ? 'opacity-100' : 'opacity-90'}`}
-    />
+    <div className="relative w-full h-full bg-black overflow-hidden flex items-center justify-center">
+      {isCurrentVideo ? (
+        <video
+          ref={videoRef}
+          key={`seq_${currentMediaUrl}_${startSec}_${endSec}`}
+          src={currentMediaUrl}
+          onLoadedMetadata={handleLoadedMetadata}
+          onSeeked={handleSeeked}
+          onTimeUpdate={handleTimeUpdate}
+          autoPlay={isPlaying}
+          muted={isMuted}
+          playsInline
+          className={className}
+        />
+      ) : (
+        <img
+          key={`img_${currentMediaUrl}_${activeSceneIndex}`}
+          src={currentMediaUrl}
+          alt="Scene media"
+          className="w-full h-full object-cover"
+        />
+      )}
+    </div>
   );
 }
 
@@ -106,6 +189,7 @@ interface UnifiedSocialPreviewProps {
     position: 'top' | 'middle' | 'bottom',
     alignment?: 'left' | 'center' | 'right'
   ) => void;
+  onSelectScene?: (sceneNumber: number) => void;
 }
 
 export function UnifiedSocialPreview({
@@ -113,11 +197,14 @@ export function UnifiedSocialPreview({
   activeAdaptation,
   currentSceneNumber = 1,
   onUpdateSceneTextPosition,
+  onSelectScene,
 }: UnifiedSocialPreviewProps) {
   const [showSafeArea, setShowSafeArea] = useState<boolean>(false);
   const [isExpandedCaption, setIsExpandedCaption] = useState<boolean>(false);
   const [cdnCacheStatus, setCdnCacheStatus] = useState<string>('DETECTING');
   const [previewMuted, setPreviewMuted] = useState<boolean>(true);
+  const [previewMode, setPreviewMode] = useState<'single' | 'full'>('single');
+  const [sequenceSceneNumber, setSequenceSceneNumber] = useState<number>(currentSceneNumber);
 
   const platform = pkg.platform || activeAdaptation?.platform || 'instagram';
   const format = pkg.format || activeAdaptation?.format || 'reel';
@@ -125,24 +212,16 @@ export function UnifiedSocialPreview({
   const handle = pkg.brand_profile?.handle || 'aurasocial';
   const avatarUrl = pkg.brand_profile?.avatar_url;
 
-  // 1. Obtener la escena activa seleccionada
+  // Lista de escenas
   const scenes = activeAdaptation?.scene_mappings || pkg.media?.scenes || [];
-  const currentScene = scenes.find((s) => s.scene_number === currentSceneNumber) || scenes[0];
+  const displaySceneNumber = previewMode === 'full' ? sequenceSceneNumber : currentSceneNumber;
+  const currentScene = scenes.find((s) => s.scene_number === displaySceneNumber) || scenes[0];
 
-  // 2. Determinar la URL del recurso multimedia (video o foto)
-  let mediaUrl = currentScene?.asset_url;
-  if (!mediaUrl && currentScene?.storage_path) {
-    mediaUrl = getB2CdnUrl(currentScene.storage_path);
-  }
-  if (!mediaUrl) {
-    mediaUrl = pkg.media?.render_url;
-  }
-  if (!mediaUrl || mediaUrl.includes('placehold.co')) {
-    mediaUrl = 'https://placehold.co/1080x1920/1e1b4b/c084fc?text=Aura+Render';
-  }
+  const totalDuration = scenes.reduce((acc, s) => acc + (s.duration_seconds || 5), 0);
 
-  // 2b. Dynamic Cloudflare CDN Probe
+  // Dynamic Cloudflare CDN Probe
   useEffect(() => {
+    let mediaUrl = currentScene?.asset_url || (currentScene?.storage_path ? getB2CdnUrl(currentScene.storage_path) : '');
     if (!mediaUrl || !mediaUrl.includes('cdnsocial.lsnethub.com')) {
       setCdnCacheStatus('DIRECT');
       return;
@@ -168,31 +247,12 @@ export function UnifiedSocialPreview({
     return () => {
       isMounted = false;
     };
-  }, [mediaUrl]);
+  }, [currentScene?.asset_url, currentScene?.storage_path]);
 
-  // 3. Determinar si el asset actual es un video
-  const isVideo = Boolean(
-    (currentScene?.mime_type && currentScene.mime_type.startsWith('video/')) ||
-    currentScene?.asset_type === 'video' ||
-    (mediaUrl && (mediaUrl.includes('.mp4') || mediaUrl.includes('.mov') || mediaUrl.includes('.webm') || mediaUrl.includes('video')))
-  );
-
-  // 3b. Calcular inicio y fin del fragmento para live preview
-  const startSec = typeof currentScene?.source_start_seconds === 'number' && currentScene.source_start_seconds >= 0
-    ? currentScene.source_start_seconds
-    : 0;
-
-  const endSec = typeof currentScene?.source_end_seconds === 'number' && currentScene.source_end_seconds > startSec
-    ? currentScene.source_end_seconds
-    : (startSec + (currentScene?.duration_seconds || 5));
-
-  const isTrimmed = startSec > 0 || (typeof currentScene?.asset_duration_seconds === 'number' && endSec < currentScene.asset_duration_seconds - 0.5);
-  const totalDuration = scenes.reduce((acc, s) => acc + (s.duration_seconds || 5), 0);
-
-  const currentOverlay = (pkg.text_overlays || []).find((t) => t.scene_number === currentSceneNumber) ||
+  const currentOverlay = (pkg.text_overlays || []).find((t) => t.scene_number === displaySceneNumber) ||
     (currentScene?.on_screen_text ? { text: currentScene.on_screen_text, safe_area_valid: true } : (pkg.text_overlays || [])[0]);
 
-  // 4. Ubicación y Alineación Dinámica del Overlay de Texto
+  // Ubicación y Alineación Dinámica del Overlay de Texto
   const textPosition = currentScene?.text_position || (currentOverlay as any)?.position || 'middle';
   const textAlignment = currentScene?.text_alignment || (currentOverlay as any)?.alignment || 'center';
 
@@ -228,30 +288,56 @@ export function UnifiedSocialPreview({
   return (
     <div className="flex flex-col h-full bg-dark-950 border border-dark-800 rounded-3xl p-5 shadow-2xl space-y-4">
       {/* Header Controls */}
-      <div className="flex items-center justify-between pb-3 border-b border-dark-800/80">
+      <div className="flex items-center justify-between pb-3 border-b border-dark-800/80 gap-2 flex-wrap">
         <div className="flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
           <span className="text-xs font-bold uppercase tracking-wider text-slate-200">
-            Live Preview — {platform.toUpperCase()} ({format.toUpperCase()})
+            Live Preview — {platform.toUpperCase()}
           </span>
         </div>
 
+        {/* Mode Selector Toggle: Escena vs Video Completo */}
+        <div className="flex items-center gap-1.5 bg-dark-900 p-1 rounded-2xl border border-dark-800">
+          <button
+            onClick={() => setPreviewMode('single')}
+            className={`px-2.5 py-1 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all ${
+              previewMode === 'single'
+                ? 'bg-aura-500 text-white shadow-lg'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            Escena E{currentSceneNumber}
+          </button>
+          <button
+            onClick={() => {
+              setPreviewMode('full');
+              setSequenceSceneNumber(1);
+            }}
+            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all ${
+              previewMode === 'full'
+                ? 'bg-emerald-500 text-slate-950 font-extrabold shadow-lg shadow-emerald-500/20'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Play className="w-2.5 h-2.5 fill-current" />
+            Video Completo ({totalDuration.toFixed(1)}s)
+          </button>
+        </div>
+
         <div className="flex items-center gap-2">
-          {/* Audio Mute/Unmute in Live Preview */}
-          {isVideo && (
-            <button
-              onClick={() => setPreviewMuted(!previewMuted)}
-              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-semibold transition-colors ${
-                !previewMuted
-                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                  : 'bg-dark-900 border border-dark-800 text-slate-400 hover:text-white'
-              }`}
-              title={previewMuted ? 'Activar sonido del preview' : 'Silenciar preview'}
-            >
-              {!previewMuted ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
-              {!previewMuted ? 'Audio ON' : 'Audio OFF'}
-            </button>
-          )}
+          {/* Audio Mute/Unmute */}
+          <button
+            onClick={() => setPreviewMuted(!previewMuted)}
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-semibold transition-colors ${
+              !previewMuted
+                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                : 'bg-dark-900 border border-dark-800 text-slate-400 hover:text-white'
+            }`}
+            title={previewMuted ? 'Activar sonido del preview' : 'Silenciar preview'}
+          >
+            {!previewMuted ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
+            {!previewMuted ? 'Audio ON' : 'Audio OFF'}
+          </button>
 
           <button
             onClick={() => setShowSafeArea(!showSafeArea)}
@@ -262,7 +348,7 @@ export function UnifiedSocialPreview({
             }`}
           >
             {showSafeArea ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-            Safe Area Guides
+            Safe Area
           </button>
         </div>
       </div>
@@ -274,28 +360,20 @@ export function UnifiedSocialPreview({
         {/* ========================================================================= */}
         {isVertical ? (
           <div className="relative w-full max-w-[280px] aspect-[9/16] bg-black rounded-3xl overflow-hidden border-2 border-dark-700 shadow-2xl select-none flex flex-col justify-between p-3">
-            {/* Background Media: Video or Image */}
-            {isVideo ? (
-              <div className="absolute inset-0 w-full h-full bg-black overflow-hidden flex items-center justify-center">
-                <TrimmedVideoPlayer
-                  mediaUrl={mediaUrl}
-                  startSeconds={startSec}
-                  endSeconds={endSec}
-                  isMuted={previewMuted}
-                  className="w-full h-full object-cover"
-                />
-              </div>
-            ) : (
-              <img
-                key={mediaUrl}
-                src={mediaUrl}
-                alt="Render Preview"
-                className="absolute inset-0 w-full h-full object-cover opacity-90"
+            {/* Multi-Scene Video / Image Sequencer */}
+            <div className="absolute inset-0 w-full h-full bg-black overflow-hidden flex items-center justify-center">
+              <SequenceVideoPlayer
+                scenes={scenes}
+                mode={previewMode}
+                selectedSceneNumber={currentSceneNumber}
+                isMuted={previewMuted}
+                onActiveSceneChange={(num) => setSequenceSceneNumber(num)}
+                className="w-full h-full object-cover"
               />
-            )}
+            </div>
 
             {/* Subtle Gradient Overlay for Readability */}
-            <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/75 pointer-events-none z-10" />
+            <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-transparent to-black/80 pointer-events-none z-10" />
 
             {/* Safe Area Guides Overlay */}
             {showSafeArea && (
@@ -312,25 +390,56 @@ export function UnifiedSocialPreview({
               </div>
             )}
 
-            {/* Top Bar */}
-            <div className="relative z-20 flex items-center justify-between text-white drop-shadow-md">
-              <div className="flex items-center gap-1.5">
-                <span className="text-[11px] font-bold tracking-tight">
-                  {platform === 'tiktok' ? 'Siguiendo | Para ti' : 'Reels'}
-                </span>
-                {currentScene && (
-                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-full bg-white/20 backdrop-blur-md text-white border border-white/20 flex items-center gap-1">
-                    <span>E{currentScene.scene_number} ({currentScene.duration_seconds || 5}s)</span>
-                    {isTrimmed && (
-                      <span className="text-[8px] text-amber-300 font-bold bg-black/40 px-1 rounded flex items-center gap-0.5">
-                        <Scissors className="w-2.5 h-2.5" />
-                        {startSec}s → {endSec}s
-                      </span>
-                    )}
-                  </span>
-                )}
+            {/* Top Multi-Segment Timeline (Reel & Story Segmented Bars) */}
+            <div className="relative z-20 space-y-1.5">
+              <div className="flex items-center gap-1 w-full pt-1">
+                {scenes.map((s) => {
+                  const isCurrent = s.scene_number === displaySceneNumber;
+                  const isPast = s.scene_number < displaySceneNumber;
+                  return (
+                    <div
+                      key={`seg_${s.scene_number}`}
+                      onClick={() => {
+                        if (onSelectScene) onSelectScene(s.scene_number);
+                        setSequenceSceneNumber(s.scene_number);
+                      }}
+                      className="flex-1 h-1 rounded-full bg-white/30 overflow-hidden cursor-pointer hover:h-1.5 transition-all"
+                      title={`Escena ${s.scene_number}: ${s.duration_seconds || 5}s`}
+                    >
+                      <div
+                        className={`h-full transition-all duration-150 ${
+                          isCurrent
+                            ? 'bg-amber-400 w-full animate-pulse'
+                            : isPast
+                            ? 'bg-white w-full'
+                            : 'bg-transparent w-0'
+                        }`}
+                      />
+                    </div>
+                  );
+                })}
               </div>
-              <MoreHorizontal className="w-4 h-4" />
+
+              {/* Top Meta Bar */}
+              <div className="flex items-center justify-between text-white drop-shadow-md">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] font-bold tracking-tight">
+                    {platform === 'tiktok' ? 'Para ti' : 'Reels'}
+                  </span>
+                  {currentScene && (
+                    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-full bg-white/20 backdrop-blur-md text-white border border-white/20 flex items-center gap-1">
+                      <span className="font-bold text-amber-300">E{displaySceneNumber}</span>
+                      <span>({(currentScene.duration_seconds || 5).toFixed(1)}s)</span>
+                      {previewMode === 'full' && (
+                        <span className="text-[8px] bg-emerald-500/30 text-emerald-300 px-1 rounded font-bold">
+                          REEL COMPLETO
+                        </span>
+                      )}
+                    </span>
+                  )}
+                </div>
+                <MoreHorizontal className="w-4 h-4" />
+              </div>
             </div>
 
             {/* Dynamic Deterministic Text Overlay (Positionable) */}
@@ -445,17 +554,14 @@ export function UnifiedSocialPreview({
 
             {/* Media Image / Video / Render */}
             <div className="relative aspect-square bg-black flex items-center justify-center overflow-hidden">
-              {isVideo ? (
-                <TrimmedVideoPlayer
-                  mediaUrl={mediaUrl}
-                  startSeconds={startSec}
-                  endSeconds={endSec}
-                  isMuted={previewMuted}
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <img key={mediaUrl} src={mediaUrl} alt="Post media" className="w-full h-full object-cover" />
-              )}
+              <SequenceVideoPlayer
+                scenes={scenes}
+                mode={previewMode}
+                selectedSceneNumber={currentSceneNumber}
+                isMuted={previewMuted}
+                onActiveSceneChange={(num) => setSequenceSceneNumber(num)}
+                className="w-full h-full object-cover"
+              />
               {currentOverlay && currentOverlay.text && (
                 <div className={`absolute inset-x-4 ${feedVerticalPosClass} ${textAlignClass} z-10 transition-all`}>
                   <div 
@@ -489,10 +595,12 @@ export function UnifiedSocialPreview({
       {/* Package Metadata Footer */}
       <div className="p-3 rounded-2xl bg-dark-900 border border-dark-800/80 flex items-center justify-between text-[11px] text-slate-400 flex-wrap gap-2">
         <span className="font-mono flex items-center gap-1.5">
-          {isVideo ? <Film className="w-3.5 h-3.5 text-emerald-400" /> : <Sparkles className="w-3.5 h-3.5 text-aura-400" />}
+          <Film className="w-3.5 h-3.5 text-emerald-400" />
           <span className="text-slate-300 font-semibold">{format.toUpperCase()}</span>
           <span className="text-slate-500">•</span>
-          <strong className="text-slate-300 font-mono">Total: {totalDuration}s</strong>
+          <span className="text-slate-400">{scenes.length} escenas planificadas</span>
+          <span className="text-slate-500">•</span>
+          <strong className="text-emerald-300 font-mono">Total: {totalDuration.toFixed(1)}s</strong>
         </span>
 
         {/* Dynamic Cloudflare CDN Status Badge */}

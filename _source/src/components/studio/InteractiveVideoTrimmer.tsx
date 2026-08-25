@@ -82,11 +82,6 @@ export function InteractiveVideoTrimmer({
     if (video.duration && !isNaN(video.duration) && video.duration > 0) {
       const realDur = parseFloat(video.duration.toFixed(1));
       setDetectedDuration(realDur);
-      // Si endSec quedó en 5s pero el video real dura mucho más (ej. 47s), expandir endSec
-      if (endSec <= 5 && realDur > 5 && (initialEndSeconds === null || initialEndSeconds === undefined || initialEndSeconds === 5)) {
-        setEndSec(realDur);
-        commitRangeChange(startSec, realDur);
-      }
     }
   };
 

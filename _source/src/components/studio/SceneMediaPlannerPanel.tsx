@@ -338,6 +338,7 @@ export function SceneMediaPlannerPanel({
             {currentScene.status === 'resolved' && 
              (currentScene.mime_type?.startsWith('video') || currentScene.asset_type === 'video') && (
               <InteractiveVideoTrimmer
+                key={`${currentScene.scene_id || currentScene.scene_number}_${currentScene.asset_id || currentScene.storage_path || 'scene'}`}
                 mediaUrl={currentScene.asset_url || (currentScene.storage_path ? getB2CdnUrl(currentScene.storage_path) : null)}
                 assetDuration={currentScene.asset_duration_seconds || currentScene.duration_seconds || 30}
                 initialStartSeconds={currentScene.source_start_seconds}

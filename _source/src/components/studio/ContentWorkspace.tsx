@@ -625,6 +625,7 @@ export function ContentWorkspace({
                 activeAdaptation={activeAdaptation}
                 currentSceneNumber={activeSceneNumber}
                 onUpdateSceneTextPosition={handleUpdateSceneTextPosition}
+                onSelectScene={(sceneNum) => setActiveSceneNumber(sceneNum)}
               />
             ) : (
               <div className="text-center p-8 bg-dark-900 border border-dark-800 rounded-3xl text-slate-400 text-xs">
