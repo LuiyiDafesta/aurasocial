@@ -337,25 +337,49 @@ export async function discoverAndSyncSocialitAccounts(params: {
 }
 
 /**
- * Desconecta una cuenta social, marcando el estado como disconnected sin eliminarla de Socialit.
+ * Desconecta una cuenta social de la marca de forma autoritativa.
  */
 export async function disconnectSocialConnection(
   connectionId: string,
   platform: SocialPlatform
 ): Promise<boolean> {
+  if (!connectionId) throw new Error('connectionId es requerido');
+
   const { data: conn } = await supabase
     .from('social_connections')
     .select('id, workspace_id, brand_id, provider')
     .eq('id', connectionId)
     .single();
 
-  const { error } = await supabase
+  // 1. Eliminar la fila de social_connections
+  const { error: deleteError } = await supabase
     .from('social_connections')
-    .update({
-      status: 'disconnected',
-      updated_at: new Date().toISOString(),
-    })
+    .delete()
     .eq('id', connectionId);
+
+  if (deleteError) {
+    console.warn(`Aviso al eliminar conexión (${connectionId}), intentando marcar como desconectada:`, deleteError);
+    const { error: updateError } = await supabase
+      .from('social_connections')
+      .update({
+        status: 'disconnected',
+        brand_id: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', connectionId);
+
+    if (updateError) {
+      // Fallback a gateway PHP
+      try {
+        await fetch(`/api/social/connections/${encodeURIComponent(connectionId)}/disconnect`, {
+          method: 'POST',
+        });
+      } catch (phpErr) {
+        console.error('Error en gateway al desconectar:', phpErr);
+        throw new Error(`Error al desconectar cuenta: ${updateError.message}`);
+      }
+    }
+  }
 
   if (conn) {
     logAuditEvent({
@@ -368,7 +392,7 @@ export async function disconnectSocialConnection(
     });
   }
 
-  return !error;
+  return true;
 }
 
 /**

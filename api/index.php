@@ -770,43 +770,76 @@ if ($method === 'POST' && $path === 'social/accounts/bind') {
 }
 
 if ($method === 'GET' && $path === 'social/accounts') {
-    $targetBrand = $_GET['brandId'] ?? $brandId;
+    $targetBrand = $_GET['brandId'] ?? ($headers['X-Brand-Id'] ?? ($headers['x-brand-id'] ?? $brandId));
+    
+    // 1. Cuentas vinculadas a la marca activa
+    $boundUrl = "{$SUPABASE_URL}/rest/v1/social_connections?workspace_id=eq.{$workspaceId}&status=neq.disconnected";
+    if (!empty($targetBrand)) {
+        $boundUrl .= "&brand_id=eq.{$targetBrand}";
+    } else {
+        $boundUrl .= "&brand_id=is.null";
+    }
+    $boundUrl .= "&order=created_at.asc";
+    
+    $boundRes = makeRequest($boundUrl, 'GET', $supaHeaders);
+    $boundList = (is_array($boundRes['body']) && !isset($boundRes['body']['error'])) ? $boundRes['body'] : [];
+    
+    // 2. Cuentas no asignadas en el workspace
+    $unassignedUrl = "{$SUPABASE_URL}/rest/v1/social_connections?workspace_id=eq.{$workspaceId}&brand_id=is.null&status=neq.disconnected&order=created_at.asc";
+    $unassignedRes = makeRequest($unassignedUrl, 'GET', $supaHeaders);
+    $unassignedList = (is_array($unassignedRes['body']) && !isset($unassignedRes['body']['error'])) ? $unassignedRes['body'] : [];
+    
     echo json_encode([
         'success' => true,
         'data' => [
-            'bound' => [
-                [
-                    'id' => 'sa_4IBnaV4KnmDI2Oo7ur5JrOjZCiw',
-                    'workspace_id' => $workspaceId,
-                    'brand_id' => $targetBrand,
-                    'platform' => 'facebook',
-                    'provider' => 'socialit',
-                    'provider_account_id' => 'sa_4IBnaV4KnmDI2Oo7ur5JrOjZCiw',
-                    'account_name' => 'LsNet Servicios Informaticos',
-                    'status' => 'connected',
-                    'scopes' => ['pages_manage_posts', 'pages_read_engagement'],
-                    'metadata' => ['provider' => 'socialit', 'source' => 'REAL_SOCIALIT', 'can_post' => true, 'health_status' => 'healthy']
-                ],
-                [
-                    'id' => 'sa_4IB4gyAXrAo2lE6bf6d68b5S1J5',
-                    'workspace_id' => $workspaceId,
-                    'brand_id' => $targetBrand,
-                    'platform' => 'tiktok',
-                    'provider' => 'socialit',
-                    'provider_account_id' => 'sa_4IB4gyAXrAo2lE6bf6d68b5S1J5',
-                    'account_name' => 'TravelRockChannel',
-                    'account_username' => '@TravelRockChannel',
-                    'status' => 'connected',
-                    'scopes' => ['video.publish'],
-                    'metadata' => ['provider' => 'socialit', 'source' => 'REAL_SOCIALIT', 'can_post' => true, 'health_status' => 'healthy']
-                ]
-            ],
-            'unassigned' => []
+            'bound' => array_map(function($c) {
+                return [
+                    'id' => $c['id'],
+                    'workspace_id' => $c['workspace_id'],
+                    'brand_id' => $c['brand_id'],
+                    'platform' => $c['platform'],
+                    'provider' => $c['provider'] ?? 'socialit',
+                    'provider_account_id' => $c['provider_account_id'] ?? ($c['account_id'] ?? $c['id']),
+                    'account_name' => $c['account_name'] ?? 'Cuenta vinculada',
+                    'account_username' => $c['account_username'] ?? null,
+                    'status' => $c['status'] ?? 'connected',
+                    'scopes' => $c['scopes'] ?? [],
+                    'metadata' => $c['metadata'] ?? []
+                ];
+            }, $boundList),
+            'unassigned' => array_map(function($c) {
+                return [
+                    'id' => $c['id'],
+                    'workspace_id' => $c['workspace_id'],
+                    'brand_id' => null,
+                    'platform' => $c['platform'],
+                    'provider' => $c['provider'] ?? 'socialit',
+                    'provider_account_id' => $c['provider_account_id'] ?? ($c['account_id'] ?? $c['id']),
+                    'account_name' => $c['account_name'] ?? 'Cuenta sin asignar',
+                    'account_username' => $c['account_username'] ?? null,
+                    'status' => $c['status'] ?? 'connected',
+                    'scopes' => $c['scopes'] ?? [],
+                    'metadata' => $c['metadata'] ?? []
+                ];
+            }, $unassignedList)
         ],
         'meta' => [
             'workspace_id' => $workspaceId,
             'brand_id' => $targetBrand
         ]
+    ]);
+    exit;
+}
+
+// Endpoint para desconectar / desvincular una conexión social de forma autoritativa
+if (($method === 'POST' || $method === 'DELETE') && preg_match('#^social/connections/([^/]+)/disconnect$#i', $path, $m)) {
+    $connId = $m[1];
+    $delUrl = "{$SUPABASE_URL}/rest/v1/social_connections?id=eq.{$connId}";
+    $delRes = makeRequest($delUrl, 'DELETE', array_merge($supaHeaders, ["Prefer: return=representation"]));
+    
+    echo json_encode([
+        'success' => true,
+        'disconnected_id' => $connId
     ]);
     exit;
 }
