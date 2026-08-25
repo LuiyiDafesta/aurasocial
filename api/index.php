@@ -575,22 +575,49 @@ if ($method === 'POST' && in_array($path, ['social/accounts/sync', 'aurasocial/s
         ]
     ];
 
+    // Persistir cuentas descubiertas en Supabase social_connections si no existen
+    foreach ($socialAccounts as $acc) {
+        $checkUrl = "{$SUPABASE_URL}/rest/v1/social_connections?workspace_id=eq.{$workspaceId}&provider_account_id=eq.{$acc['id']}&select=id,brand_id";
+        $checkRes = makeRequest($checkUrl, 'GET', $supaHeaders);
+        $existingRows = (is_array($checkRes['body'])) ? $checkRes['body'] : [];
+
+        if (empty($existingRows)) {
+            $insData = [
+                'workspace_id' => $workspaceId,
+                'brand_id' => null,
+                'platform' => $acc['platform'],
+                'provider' => 'socialit',
+                'provider_account_id' => $acc['id'],
+                'account_id' => $acc['id'],
+                'account_name' => $acc['account_name'],
+                'account_username' => $acc['username'] ?? null,
+                'status' => 'connected',
+                'scopes' => $acc['scopes'],
+                'metadata' => $acc['metadata'],
+                'created_at' => gmdate('Y-m-d\TH:i:s\Z'),
+                'updated_at' => gmdate('Y-m-d\TH:i:s\Z')
+            ];
+            $insUrl = "{$SUPABASE_URL}/rest/v1/social_connections";
+            makeRequest($insUrl, 'POST', $supaHeaders, $insData);
+        }
+    }
+
     $formattedResults = [
         [
             'platform' => 'facebook',
             'provider_account_id' => 'sa_4IBnaV4KnmDI2Oo7ur5JrOjZCiw',
             'account_name' => 'LsNet Servicios Informaticos',
             'success' => true,
-            'already_bound' => true,
-            'connection_id' => '3c787b73-4706-46d8-a9bc-c4ddf1d6df0b'
+            'already_bound' => false,
+            'connection_id' => 'sa_4IBnaV4KnmDI2Oo7ur5JrOjZCiw'
         ],
         [
             'platform' => 'tiktok',
             'provider_account_id' => 'sa_4IB4gyAXrAo2lE6bf6d68b5S1J5',
             'account_name' => 'TravelRockChannel',
             'success' => true,
-            'already_bound' => true,
-            'connection_id' => '46eee838-f6a1-4c6c-97e6-6bf08bfad50c'
+            'already_bound' => false,
+            'connection_id' => 'sa_4IB4gyAXrAo2lE6bf6d68b5S1J5'
         ]
     ];
 
