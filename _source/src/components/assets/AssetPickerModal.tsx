@@ -5,18 +5,24 @@ import { AssetGrid } from './AssetGrid';
 import { AssetFilters } from './AssetFilters';
 import { AssetPreviewModal } from './AssetPreviewModal';
 import { AssetDetailsModal } from './AssetDetailsModal';
+import { AssetUploadModal } from './AssetUploadModal';
 import { Button } from '../common/Button';
 import { useToast } from '../../hooks/useToast';
 import { 
   FolderPlus, 
   X, 
-  Check 
+  Check,
+  UploadCloud
 } from 'lucide-react';
 
 interface AssetPickerModalProps {
   isOpen: boolean;
   onClose: () => void;
   brandId: string;
+  workspaceId?: string;
+  brandName?: string;
+  contentItemId?: string | null;
+  contentTitle?: string;
   onSelectAsset: (asset: ContentAsset) => void;
   title?: string;
   allowedTypes?: AssetType[];
@@ -26,6 +32,10 @@ export function AssetPickerModal({
   isOpen,
   onClose,
   brandId,
+  workspaceId,
+  brandName,
+  contentItemId,
+  contentTitle,
   onSelectAsset,
   title = 'Seleccionar Asset Multimedia',
 }: AssetPickerModalProps) {
@@ -41,9 +51,10 @@ export function AssetPickerModal({
   // Selección
   const [selectedAsset, setSelectedAsset] = useState<ContentAsset | null>(null);
 
-  // Modales de preview / detalle
+  // Modales de preview / detalle / upload
   const [previewAsset, setPreviewAsset] = useState<ContentAsset | null>(null);
   const [detailsAsset, setDetailsAsset] = useState<ContentAsset | null>(null);
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState<boolean>(false);
 
   const { toast } = useToast();
 
@@ -105,12 +116,24 @@ export function AssetPickerModal({
             </div>
           </div>
 
-          <button
-            onClick={onClose}
-            className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-white hover:bg-dark-800 transition-colors"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-3">
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setIsUploadModalOpen(true)}
+              leftIcon={<UploadCloud className="w-4 h-4" />}
+              className="text-xs bg-aura-600 hover:bg-aura-500 text-white font-semibold"
+            >
+              Subir Asset
+            </Button>
+
+            <button
+              onClick={onClose}
+              className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-white hover:bg-dark-800 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Filters */}
@@ -133,11 +156,12 @@ export function AssetPickerModal({
             onPreview={(a) => setPreviewAsset(a)}
             onViewDetails={(a) => setDetailsAsset(a)}
             onDelete={() => {}}
+            onUploadClick={() => setIsUploadModalOpen(true)}
             onSelect={(a) => setSelectedAsset(a)}
             isSelectable={true}
             selectedAssetIds={selectedAsset ? [selectedAsset.id] : []}
             emptyTitle="No se encontraron assets disponibles"
-            emptyDescription="Probá ajustando los filtros de búsqueda o subí nuevos assets a la marca."
+            emptyDescription="Subí tus videos o imágenes para asignarlos a esta escena."
           />
         </div>
 
@@ -170,7 +194,7 @@ export function AssetPickerModal({
           </div>
         </div>
 
-        {/* Lightbox Previews */}
+        {/* Lightbox Previews & Upload Modal */}
         <AssetPreviewModal
           isOpen={!!previewAsset}
           onClose={() => setPreviewAsset(null)}
@@ -187,6 +211,23 @@ export function AssetPickerModal({
           }}
           onDelete={() => {}}
         />
+
+        {isUploadModalOpen && (
+          <AssetUploadModal
+            isOpen={isUploadModalOpen}
+            onClose={() => setIsUploadModalOpen(false)}
+            workspaceId={workspaceId || ''}
+            brandId={brandId}
+            brandName={brandName || 'Aura Brand'}
+            scope="brand"
+            contentItemId={contentItemId}
+            contentTitle={contentTitle}
+            onAssetUploaded={() => {
+              setIsUploadModalOpen(false);
+              loadAssets();
+            }}
+          />
+        )}
 
       </div>
     </div>

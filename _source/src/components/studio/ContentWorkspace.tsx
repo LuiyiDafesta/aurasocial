@@ -635,11 +635,15 @@ export function ContentWorkspace({
       {isAssetPickerOpen && (
         <AssetPickerModal
           isOpen={isAssetPickerOpen}
+          workspaceId={item.workspace_id || ''}
+          brandId={item.brand_id || ''}
+          brandName={item.brands?.name || 'Aura Social'}
+          contentItemId={item.id}
+          contentTitle={item.title}
           onClose={() => {
             setIsAssetPickerOpen(false);
             setSelectedSceneForAsset(null);
           }}
-          brandId={item.brand_id || ''}
           onSelectAsset={handleSelectAssetForScene}
         />
       )}
