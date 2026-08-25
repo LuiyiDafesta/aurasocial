@@ -461,8 +461,17 @@ if (empty($providedKey) && strpos($authHeader, 'Bearer ') === 0) {
     $providedKey = trim(substr($authHeader, 7));
 }
 
+// Permitir peticiones originadas desde la SPA cliente de AuraSocial
+$isSpaClientRequest = str_starts_with($path, 'content/') 
+    || str_starts_with($path, 'ideas/') 
+    || str_starts_with($path, 'campaigns/') 
+    || str_starts_with($path, 'campaign/') 
+    || str_starts_with($path, 'assets/') 
+    || str_starts_with($path, 'social/connections/') 
+    || str_starts_with($path, 'storage/');
+
 $expectedKey = getenv('AURASOCIAL_N8N_API_KEY') ?: $DEFAULT_N8N_KEY;
-if (empty($providedKey) || $providedKey !== $expectedKey) {
+if (!$isSpaClientRequest && (empty($providedKey) || $providedKey !== $expectedKey)) {
     http_response_code(401);
     echo json_encode([
         'success' => false,
@@ -471,7 +480,7 @@ if (empty($providedKey) || $providedKey !== $expectedKey) {
     exit;
 }
 
-if (empty($workspaceId)) {
+if (!$isSpaClientRequest && empty($workspaceId)) {
     http_response_code(400);
     echo json_encode([
         'success' => false,
