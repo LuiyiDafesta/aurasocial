@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { PublicationPackage, PlatformAdaptation, SceneMediaPlan } from '../../types/platformAdaptation';
 import { 
   Heart, 
@@ -37,19 +37,22 @@ function SequenceVideoPlayer({
   onActiveSceneChange,
   className = 'w-full h-full object-cover',
 }: SequenceVideoPlayerProps) {
-  const [playingIndex, setPlayingIndex] = useState<number>(0);
+  const [playingIndex, setPlayingIndex] = useState<number>(() => {
+    const idx = scenes.findIndex((s) => s.scene_number === selectedSceneNumber);
+    return idx >= 0 ? idx : 0;
+  });
   const [isPlaying] = useState<boolean>(true);
   const videoRef = useRef<HTMLVideoElement>(null);
 
-  // Determinar la escena actual según el modo
-  const activeSceneIndex = useMemo(() => {
-    if (mode === 'single') {
-      const idx = scenes.findIndex((s) => s.scene_number === selectedSceneNumber);
-      return idx >= 0 ? idx : 0;
+  // Sincronizar inmediatamente cuando el usuario selecciona una escena (ej. al hacer clic en las barritas de arriba o en el media planner)
+  useEffect(() => {
+    const idx = scenes.findIndex((s) => s.scene_number === selectedSceneNumber);
+    if (idx >= 0 && idx !== playingIndex) {
+      setPlayingIndex(idx);
     }
-    return playingIndex >= 0 && playingIndex < scenes.length ? playingIndex : 0;
-  }, [mode, selectedSceneNumber, playingIndex, scenes]);
+  }, [selectedSceneNumber, scenes]);
 
+  const activeSceneIndex = playingIndex >= 0 && playingIndex < scenes.length ? playingIndex : 0;
   const currentScene = scenes[activeSceneIndex] || scenes[0];
 
   // Determinar URL del asset
@@ -75,24 +78,16 @@ function SequenceVideoPlayer({
     ? currentScene.source_end_seconds
     : (startSec + (currentScene?.duration_seconds || 5));
 
-  // Sincronizar active scene con el padre
+  // Notificar al padre cuando cambia de escena automáticamente en modo full
   useEffect(() => {
     if (currentScene && onActiveSceneChange) {
       onActiveSceneChange(currentScene.scene_number);
     }
-  }, [currentScene?.scene_number, onActiveSceneChange]);
-
-  // Si cambia de modo single a full o cambia selectedSceneNumber en modo single
-  useEffect(() => {
-    if (mode === 'single') {
-      const idx = scenes.findIndex((s) => s.scene_number === selectedSceneNumber);
-      if (idx >= 0) setPlayingIndex(idx);
-    }
-  }, [mode, selectedSceneNumber, scenes]);
+  }, [activeSceneIndex]);
 
   // Manejo de imágenes en modo Full Video (timer de transición automática)
   useEffect(() => {
-    if (mode === 'full' && !isCurrentVideo && isPlaying) {
+    if (mode === 'full' && !isCurrentVideo && isPlaying && scenes.length > 1) {
       const durMs = (currentScene?.duration_seconds || 5) * 1000;
       const timer = setTimeout(() => {
         setPlayingIndex((prev) => (prev + 1) % scenes.length);
@@ -100,7 +95,7 @@ function SequenceVideoPlayer({
 
       return () => clearTimeout(timer);
     }
-  }, [mode, isCurrentVideo, isPlaying, currentScene?.duration_seconds, scenes.length]);
+  }, [mode, isCurrentVideo, isPlaying, currentScene?.duration_seconds, activeSceneIndex, scenes.length]);
 
   // Manejo de video
   const handleLoadedMetadata = () => {
@@ -128,16 +123,17 @@ function SequenceVideoPlayer({
     // Si alcanzó el final del fragmento recortado
     if (currentPos >= endSec - 0.05 || currentPos < startSec - 0.1) {
       if (mode === 'full' && scenes.length > 1) {
-        // Pasar a la siguiente escena
+        // Pasar a la siguiente escena en la secuencia
         setPlayingIndex((prev) => (prev + 1) % scenes.length);
       } else {
-        // Loopear la misma escena
+        // Loopear el fragmento de la misma escena
         video.currentTime = startSec;
         if (isPlaying) video.play().catch(() => {});
       }
     }
   };
 
+  // Asegurar que el video siempre salta a startSec inmediatamente al cambiar de escena o recorte
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
@@ -145,7 +141,7 @@ function SequenceVideoPlayer({
     if (isPlaying) {
       video.play().catch(() => {});
     }
-  }, [startSec, endSec, currentMediaUrl]);
+  }, [activeSceneIndex, startSec, endSec, currentMediaUrl]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -158,7 +154,7 @@ function SequenceVideoPlayer({
       {isCurrentVideo ? (
         <video
           ref={videoRef}
-          key={`seq_${currentMediaUrl}_${startSec}_${endSec}`}
+          key={`seq_${activeSceneIndex}_${currentMediaUrl}_${startSec}_${endSec}`}
           src={currentMediaUrl}
           onLoadedMetadata={handleLoadedMetadata}
           onSeeked={handleSeeked}
