@@ -36,7 +36,7 @@ export async function composeAndRenderAdaptation(params: RenderParams): Promise<
   const validation = validatePlatformAdaptation(adaptation, scenes);
 
   // 2. Calcular dimensiones, aspecto y duración total
-  const totalDuration = scenes.reduce((acc, s) => acc + (s.duration_seconds || 5), 0);
+  const totalDuration = parseFloat(scenes.reduce((acc, s) => acc + Number(s.duration_seconds || 0), 0).toFixed(2));
   const width = adaptation.dimensions?.width || 1080;
   const height = adaptation.dimensions?.height || 1920;
   const aspectRatio = adaptation.dimensions?.aspect_ratio || '9:16';

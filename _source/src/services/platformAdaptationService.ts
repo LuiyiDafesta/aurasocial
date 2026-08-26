@@ -184,21 +184,27 @@ export function validatePlatformAdaptation(
   }
 
   // Verificar duración total
-  const totalDuration = scenes.reduce((sum, s) => sum + (s.duration_seconds || 0), 0);
-  if (totalDuration > profile.maxDurationSeconds) {
+  const totalDuration = scenes.reduce((sum, s) => sum + Number(s.duration_seconds || 0), 0);
+  const maxDuration = profile.maxDurationSeconds;
+  const minDuration = profile.minDurationSeconds || 1;
+  const epsilon = 0.01;
+
+  if (typeof maxDuration === 'number' && maxDuration > 0 && totalDuration > maxDuration + epsilon) {
+    const formattedTotal = Number(totalDuration.toFixed(2));
     errors.push({
       code: 'DURATION_EXCEEDED',
       field: 'target_duration_seconds',
-      message: `La duración total (${totalDuration}s) excede el máximo permitido para ${profile.name} (${profile.maxDurationSeconds}s).`,
+      message: `Duración excedida: ${formattedTotal}s / ${maxDuration}s para ${profile.name}.`,
       severity: 'error',
     });
   }
 
-  if (totalDuration < profile.minDurationSeconds) {
+  if (typeof minDuration === 'number' && minDuration > 0 && totalDuration < minDuration - epsilon && scenes.length > 0) {
+    const formattedTotal = Number(totalDuration.toFixed(2));
     warnings.push({
       code: 'DURATION_TOO_SHORT',
       field: 'target_duration_seconds',
-      message: `La duración total (${totalDuration}s) es menor al mínimo sugerido (${profile.minDurationSeconds}s).`,
+      message: `La duración total (${formattedTotal}s) es menor al mínimo sugerido de ${minDuration}s para ${profile.name}.`,
     });
   }
 

@@ -8,6 +8,7 @@ import {
   ValidationWarning,
   SceneMediaPlan,
 } from '../types/platformAdaptation';
+import { getPlatformProfile } from '../config/platformProfiles';
 
 /**
  * Diccionario centralizado de restricciones por plataforma (Fase 9A)
@@ -47,7 +48,7 @@ export const PLATFORM_CONSTRAINTS: Record<string, PlatformConstraints> = {
     supportsVideo: true,
     supportsImage: false,
     allowedAspectRatios: ['9:16'],
-    maxDurationSeconds: 180,
+    maxDurationSeconds: 60,
     minDurationSeconds: 3,
     safeAreaMargins: { top: 15, bottom: 25, left: 5, right: 20 },
     requiresCaption: false,
@@ -87,10 +88,68 @@ export const PLATFORM_CONSTRAINTS: Record<string, PlatformConstraints> = {
     supportsVideo: true,
     supportsImage: true,
     allowedAspectRatios: ['1:1', '16:9', '4:5'],
+    maxDurationSeconds: 60,
+    minDurationSeconds: 3,
     safeAreaMargins: { top: 5, bottom: 5, left: 5, right: 5 },
     requiresCaption: true,
     requiresCta: false,
     allowedMediaTypes: ['image/jpeg', 'image/png', 'video/mp4', 'image/svg+xml'],
+  },
+  'youtube_shorts_short': {
+    platform: 'youtube_shorts',
+    format: 'short',
+    maxCaptionLength: 5000,
+    supportsVideo: true,
+    supportsImage: false,
+    allowedAspectRatios: ['9:16'],
+    maxDurationSeconds: 60,
+    minDurationSeconds: 5,
+    safeAreaMargins: { top: 10, bottom: 20, left: 6, right: 18 },
+    requiresCaption: false,
+    requiresCta: false,
+    allowedMediaTypes: ['video/mp4'],
+  },
+  'youtube_video': {
+    platform: 'youtube',
+    format: 'video',
+    maxCaptionLength: 5000,
+    supportsVideo: true,
+    supportsImage: false,
+    allowedAspectRatios: ['16:9'],
+    maxDurationSeconds: 3600,
+    minDurationSeconds: 15,
+    safeAreaMargins: { top: 5, bottom: 8, left: 5, right: 5 },
+    requiresCaption: true,
+    requiresCta: true,
+    allowedMediaTypes: ['video/mp4'],
+  },
+  'x_post': {
+    platform: 'x',
+    format: 'post',
+    maxCaptionLength: 280,
+    supportsVideo: true,
+    supportsImage: true,
+    allowedAspectRatios: ['1:1', '16:9', '9:16'],
+    maxDurationSeconds: 140,
+    minDurationSeconds: 1,
+    safeAreaMargins: { top: 5, bottom: 5, left: 5, right: 5 },
+    requiresCaption: true,
+    requiresCta: false,
+    allowedMediaTypes: ['image/jpeg', 'image/png', 'video/mp4'],
+  },
+  'pinterest_post': {
+    platform: 'pinterest',
+    format: 'post',
+    maxCaptionLength: 500,
+    supportsVideo: true,
+    supportsImage: true,
+    allowedAspectRatios: ['4:5', '9:16'],
+    maxDurationSeconds: 900,
+    minDurationSeconds: 4,
+    safeAreaMargins: { top: 8, bottom: 8, left: 8, right: 8 },
+    requiresCaption: true,
+    requiresCta: true,
+    allowedMediaTypes: ['image/jpeg', 'image/png', 'video/mp4'],
   },
 };
 
@@ -100,16 +159,25 @@ export function getPlatformConstraints(platform: TargetPlatform, format: TargetF
     return PLATFORM_CONSTRAINTS[key];
   }
 
+  const profile = getPlatformProfile(platform);
+
   return {
     platform,
     format,
-    maxCaptionLength: 2200,
-    supportsVideo: true,
-    supportsImage: true,
-    allowedAspectRatios: ['9:16', '1:1', '16:9', '4:5'],
-    safeAreaMargins: { top: 10, bottom: 15, left: 5, right: 10 },
-    requiresCaption: false,
-    requiresCta: false,
+    maxCaptionLength: profile.maxCaptionLength || 2200,
+    supportsVideo: profile.supportsVideo ?? true,
+    supportsImage: profile.supportsImage ?? true,
+    allowedAspectRatios: (profile.allowedAspectRatios as any) || ['9:16', '1:1', '16:9', '4:5'],
+    maxDurationSeconds: profile.maxDurationSeconds || 60,
+    minDurationSeconds: profile.minDurationSeconds || 1,
+    safeAreaMargins: { 
+      top: profile.safeArea?.top || 10, 
+      bottom: profile.safeArea?.bottom || 15, 
+      left: profile.safeArea?.left || 5, 
+      right: profile.safeArea?.right || 10 
+    },
+    requiresCaption: profile.requiresCaption ?? false,
+    requiresCta: profile.requiresCta ?? false,
     allowedMediaTypes: ['image/jpeg', 'image/png', 'video/mp4', 'image/svg+xml'],
   };
 }
@@ -250,7 +318,35 @@ export function validatePlatformAdaptation(
     }
   }
 
-  // 3. VALIDACIÓN DE RENDER & DIMENSIONES
+  // 3. VALIDACIÓN DE DURACIÓN FINAL (Quality Gate)
+  const totalDuration = (scenes || []).reduce(
+    (sum, scene) => sum + Number(scene.duration_seconds || 0),
+    0
+  );
+  const maxDuration = constraints.maxDurationSeconds;
+  const minDuration = constraints.minDurationSeconds || 1;
+  const epsilon = 0.01;
+
+  if (typeof maxDuration === 'number' && maxDuration > 0 && totalDuration > maxDuration + epsilon) {
+    const formattedTotal = Number(totalDuration.toFixed(2));
+    errors.push({
+      code: 'DURATION_EXCEEDED',
+      field: 'target_duration_seconds',
+      message: `Duración excedida: ${formattedTotal}s / ${maxDuration}s para ${platform.toUpperCase()} (${format.toUpperCase()}).`,
+      severity: 'error',
+    });
+  }
+
+  if (typeof minDuration === 'number' && minDuration > 0 && totalDuration < minDuration - epsilon && (scenes || []).length > 0) {
+    const formattedTotal = Number(totalDuration.toFixed(2));
+    warnings.push({
+      code: 'DURATION_TOO_SHORT',
+      field: 'target_duration_seconds',
+      message: `La duración total (${formattedTotal}s) es menor al mínimo sugerido de ${minDuration}s para ${platform.toUpperCase()}.`,
+    });
+  }
+
+  // 4. VALIDACIÓN DE RENDER & DIMENSIONES
   const aspectRatio = adaptation.dimensions?.aspect_ratio || '9:16';
   if (!constraints.allowedAspectRatios.includes(aspectRatio)) {
     errors.push({
@@ -270,10 +366,10 @@ export function validatePlatformAdaptation(
     });
   }
 
-  const isValid = errors.length === 0;
   const isBlocked = errors.some(
-    (e) => e.severity === 'fatal' || e.code === 'SCENE_MISSING_ASSET' || e.code === 'TEXT_OVERLAY_OVERFLOW'
+    (e) => e.severity === 'fatal' || e.severity === 'error' || e.code === 'DURATION_EXCEEDED' || e.code === 'SCENE_MISSING_ASSET' || e.code === 'TEXT_OVERLAY_OVERFLOW'
   );
+  const isValid = errors.length === 0 && !isBlocked;
 
   return {
     isValid,

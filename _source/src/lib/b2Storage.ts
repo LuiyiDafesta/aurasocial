@@ -1,14 +1,24 @@
 import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
 
+const getEnv = (key: string, fallback: string) => {
+  if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env[key]) {
+    return import.meta.env[key];
+  }
+  if (typeof process !== 'undefined' && process.env && process.env[key]) {
+    return process.env[key];
+  }
+  return fallback;
+};
+
 export const B2_CONFIG = {
-  endpoint: import.meta.env.VITE_B2_ENDPOINT || 'https://s3.us-west-004.backblazeb2.com',
-  region: import.meta.env.VITE_B2_REGION || 'us-west-004',
-  bucketName: import.meta.env.VITE_B2_BUCKET_NAME || 'AuraSocial',
-  keyId: import.meta.env.VITE_B2_KEY_ID || '00429a18a8ece8c000000000b',
-  applicationKey: import.meta.env.VITE_B2_APPLICATION_KEY || 'K004Txy/pW8Z+i+3lNZZA1vobRMdTvc',
-  apiGatewayUrl: import.meta.env.VITE_API_GATEWAY_URL || '',
-  cdnBaseUrl: import.meta.env.VITE_B2_CDN_URL || 'https://cdnsocial.lsnethub.com',
+  endpoint: getEnv('VITE_B2_ENDPOINT', 'https://s3.us-west-004.backblazeb2.com'),
+  region: getEnv('VITE_B2_REGION', 'us-west-004'),
+  bucketName: getEnv('VITE_B2_BUCKET_NAME', 'AuraSocial'),
+  keyId: getEnv('VITE_B2_KEY_ID', '00429a18a8ece8c000000000b'),
+  applicationKey: getEnv('VITE_B2_APPLICATION_KEY', 'K004Txy/pW8Z+i+3lNZZA1vobRMdTvc'),
+  apiGatewayUrl: getEnv('VITE_API_GATEWAY_URL', ''),
+  cdnBaseUrl: getEnv('VITE_B2_CDN_URL', 'https://cdnsocial.lsnethub.com'),
 };
 
 export const b2Client = new S3Client({

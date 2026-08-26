@@ -462,15 +462,23 @@ export function ContentWorkspace({
 
   // Derive visible status for user
   const getUserVisibleStatus = () => {
-    const isNeedsAssets = adaptations.some((a) => a.readiness_status === 'needs_assets' || a.validation_status === 'blocked');
-    const isAllApproved = adaptations.length > 0 && adaptations.every((a) => a.readiness_status === 'approved');
-    const isAllValid = adaptations.length > 0 && adaptations.every((a) => a.readiness_status === 'valid' || a.readiness_status === 'approved');
+    const isBlocked = adaptations.some((a) => a.validation_status === 'blocked' || a.readiness_status === 'blocked');
+    const isNeedsAssets = adaptations.some((a) => a.readiness_status === 'needs_assets');
+    const isAllApproved = !isBlocked && !isNeedsAssets && adaptations.length > 0 && adaptations.every((a) => a.readiness_status === 'approved');
+    const isAllValid = !isBlocked && !isNeedsAssets && adaptations.length > 0 && adaptations.every((a) => a.readiness_status === 'valid' || a.readiness_status === 'approved');
 
     if (item.status === 'published') {
       return {
         label: 'Publicado',
         color: 'bg-purple-500/10 text-purple-300 border-purple-500/30',
         icon: CheckCircle2,
+      };
+    }
+    if (isBlocked) {
+      return {
+        label: '❌ No Válido (Quality Gate Bloqueado)',
+        color: 'bg-rose-500/10 text-rose-300 border-rose-500/30',
+        icon: AlertCircle,
       };
     }
     if (isAllApproved) {

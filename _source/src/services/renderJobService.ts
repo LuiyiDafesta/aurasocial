@@ -8,6 +8,7 @@ import {
 import { PlatformAdaptation } from '../types/platformAdaptation';
 import { getPlatformAdaptation, buildRenderPackage } from './platformAdaptationService';
 import { getB2SignedUrl } from '../lib/b2Storage';
+import { getPlatformProfile } from '../config/platformProfiles';
 
 /**
  * Quality Guard para Render Jobs (Fase 12E.1 / Fase 16.1):
@@ -171,6 +172,22 @@ export function validateMediaForRender(
     if (errors.length === 0) {
       errors.push('snapshot duration_seconds is 0');
     }
+  }
+
+  // G. Validar duración máxima por plataforma
+  const profile = getPlatformProfile(adaptation.platform || 'instagram');
+  const totalDuration = scenes.reduce(
+    (sum, scene) => sum + Number(scene.duration_seconds || 0),
+    0
+  );
+  const maxDuration = profile.maxDurationSeconds;
+  const epsilon = 0.01;
+
+  if (typeof maxDuration === 'number' && maxDuration > 0 && totalDuration > maxDuration + epsilon) {
+    const formattedTotal = Number(totalDuration.toFixed(2));
+    errors.push(
+      `Duración excedida: ${formattedTotal}s supera el límite máximo de ${maxDuration}s para ${profile.name}.`
+    );
   }
 
   const canRender = errors.length === 0 && missing_slots.length === 0;

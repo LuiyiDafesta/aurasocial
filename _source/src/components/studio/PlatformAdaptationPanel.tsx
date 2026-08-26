@@ -8,6 +8,7 @@ import {
 import { Button } from '../common/Button';
 import { n8nOrchestratorService, N8nPublishWorkflowResponse } from '../../services/n8n/n8nOrchestratorService';
 import { useToast } from '../../hooks/useToast';
+import { getPlatformProfile } from '../../config/platformProfiles';
 import { 
   Instagram, 
   Facebook, 
@@ -60,17 +61,46 @@ export function PlatformAdaptationPanel({
   const currentAdaptation =
     adaptations.find((a) => a.platform === activePlatform) || adaptations[0];
 
-  const pkg = (currentAdaptation?.publication_package as PublicationPackage) || null;
-  const validation: ValidationResult | null =
-    pkg?.validation_snapshot || (currentAdaptation ? {
-      isValid: currentAdaptation.validation_status === 'valid',
-      isBlocked: currentAdaptation.validation_status === 'blocked',
-      errors: currentAdaptation.validation_errors || [],
-      warnings: currentAdaptation.validation_warnings || [],
-      validatedAt: currentAdaptation.updated_at,
-    } : null);
+  const profile = getPlatformProfile(activePlatform);
+  const maxDuration = profile.maxDurationSeconds;
+  const scenes = currentAdaptation?.scene_mappings || [];
+  const totalDuration = scenes.reduce(
+    (sum, s) => sum + Number(s.duration_seconds || 0),
+    0
+  );
+  const formattedDuration = Number(totalDuration.toFixed(2));
+  const epsilon = 0.01;
+  const isDurationExceeded = typeof maxDuration === 'number' && maxDuration > 0 && totalDuration > maxDuration + epsilon;
 
-  const readinessStatus = currentAdaptation?.readiness_status || 'draft';
+  const pkg = (currentAdaptation?.publication_package as PublicationPackage) || null;
+  const rawValidation = pkg?.validation_snapshot || (currentAdaptation ? {
+    isValid: currentAdaptation.validation_status === 'valid',
+    isBlocked: currentAdaptation.validation_status === 'blocked',
+    errors: currentAdaptation.validation_errors || [],
+    warnings: currentAdaptation.validation_warnings || [],
+    validatedAt: currentAdaptation.updated_at,
+  } : null);
+
+  const validation: ValidationResult | null = rawValidation ? {
+    isValid: rawValidation.isValid && !isDurationExceeded,
+    isBlocked: rawValidation.isBlocked || isDurationExceeded,
+    errors: [
+      ...rawValidation.errors.filter(e => e.code !== 'DURATION_EXCEEDED'),
+      ...(isDurationExceeded ? [{
+        code: 'DURATION_EXCEEDED',
+        field: 'target_duration_seconds',
+        message: `Duración excedida: ${formattedDuration}s / ${maxDuration}s para ${profile.name}.`,
+        severity: 'error' as const,
+      }] : []),
+    ],
+    warnings: rawValidation.warnings,
+    validatedAt: rawValidation.validatedAt,
+  } : null;
+
+  const isQualityGateOk = validation ? (validation.isValid && !validation.isBlocked && !isDurationExceeded) : false;
+  const readinessStatus = (!isQualityGateOk && (currentAdaptation?.readiness_status === 'valid' || currentAdaptation?.readiness_status === 'approved'))
+    ? 'blocked'
+    : (currentAdaptation?.readiness_status || 'draft');
 
   const getPlatformIcon = (plat: TargetPlatform) => {
     switch (plat) {
@@ -317,13 +347,13 @@ export function PlatformAdaptationPanel({
                   <ShieldCheck className="w-4 h-4 text-emerald-400" />
                   Quality Gate:
                 </span>
-                {validation.isBlocked ? (
+                {validation.isBlocked || isDurationExceeded ? (
                   <span className="text-rose-400 flex items-center gap-1 text-[11px] font-semibold">
-                    <ShieldAlert className="w-3.5 h-3.5" /> Bloqueado
+                    <ShieldAlert className="w-3.5 h-3.5" /> ❌ No válido
                   </span>
                 ) : validation.isValid ? (
                   <span className="text-emerald-400 flex items-center gap-1 text-[11px] font-semibold">
-                    <ShieldCheck className="w-3.5 h-3.5" /> 100% Válido
+                    <ShieldCheck className="w-3.5 h-3.5" /> ✅ 100% Válido
                   </span>
                 ) : (
                   <span className="text-amber-400 flex items-center gap-1 text-[11px] font-semibold">
@@ -336,8 +366,9 @@ export function PlatformAdaptationPanel({
               <div className="space-y-2 text-xs">
                 <div className="flex items-center justify-between text-slate-300">
                   <span className="text-[11px]">Duración máxima ({activePlatform}):</span>
-                  <span className="font-mono text-[11px] text-white">
-                    {currentAdaptation.target_duration_seconds || currentAdaptation.render_output?.duration_seconds || 15}s / 60s
+                  <span className={`font-mono text-[11px] font-semibold ${isDurationExceeded ? 'text-rose-400' : 'text-white'}`}>
+                    {formattedDuration}s / {maxDuration}s
+                    {isDurationExceeded && <span className="ml-1 text-[10px] text-rose-400 uppercase font-bold">(Excedido)</span>}
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-slate-300">

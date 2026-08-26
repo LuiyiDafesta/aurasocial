@@ -125,7 +125,7 @@ export const PLATFORM_PROFILES: Record<PlatformKey, PlatformProfile> = {
     supportsVideo: true,
     supportsImage: true,
     allowedAspectRatios: ['9:16'],
-    maxDurationSeconds: 180,
+    maxDurationSeconds: 60,
     minDurationSeconds: 3,
     defaultFitMode: 'cover',
     textRules: {
@@ -201,7 +201,7 @@ export const PLATFORM_PROFILES: Record<PlatformKey, PlatformProfile> = {
     supportsVideo: true,
     supportsImage: true,
     allowedAspectRatios: ['1:1', '4:5', '16:9'],
-    maxDurationSeconds: 600,
+    maxDurationSeconds: 60,
     minDurationSeconds: 3,
     defaultFitMode: 'contain',
     textRules: {
